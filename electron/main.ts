@@ -1,5 +1,5 @@
 import { app, BrowserWindow, Notification } from 'electron';
-import { autoUpdater } from 'electron-updater';
+import updaterPkg from 'electron-updater';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { registerAuthIpc } from './ipc/auth.ipc';
@@ -10,6 +10,7 @@ import { registerUsersIpc } from './ipc/users.ipc';
 import { registerSettingsIpc } from './ipc/settings.ipc';
 
 let mainWindow: BrowserWindow | null = null;
+const { autoUpdater } = updaterPkg;
 
 async function createWindow() {
   const preloadPath = fileURLToPath(new URL('../preload/index.cjs', import.meta.url));

@@ -181,12 +181,7 @@ export default function Dashboard() {
   return (
     <div className="space-y-4">
       <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-white">Dashboard</h1>
-          <p className="mt-1 text-sm text-slate-400">
-            {loading ? 'Loading…' : 'Live overview of billing, tenants and payments.'}
-          </p>
-        </div>
+
       </header>
 
       {error ? (
