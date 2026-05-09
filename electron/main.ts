@@ -311,6 +311,24 @@ async function startBlockingUpdateFlow() {
     autoUpdater.allowPrerelease = true;
 
     await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      let updateStarted = false;
+      let downloadFinished = false;
+
+      const finishResolve = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve();
+      };
+
+      const finishReject = (error: unknown) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(error);
+      };
+
       const cleanup = () => {
         autoUpdater.removeListener('update-available', onAvailable);
         autoUpdater.removeListener('update-not-available', onNotAvailable);
@@ -320,6 +338,7 @@ async function startBlockingUpdateFlow() {
       };
 
       const onAvailable = async (info: { version: string }) => {
+        updateStarted = true;
         sendUpdateState({
           title: 'New update found',
           message: `Version ${info.version} is required before Billify can open. Downloading now.`,
@@ -330,14 +349,12 @@ async function startBlockingUpdateFlow() {
         try {
           await autoUpdater.downloadUpdate();
         } catch (error) {
-          cleanup();
-          reject(error);
+          finishReject(error);
         }
       };
 
       const onNotAvailable = () => {
-        cleanup();
-        resolve();
+        finishResolve();
       };
 
       const formatBytes = (value: number) => {
@@ -356,6 +373,7 @@ async function startBlockingUpdateFlow() {
       };
 
       const onDownloaded = (info: { version: string }) => {
+        downloadFinished = true;
         sendUpdateState({
           title: 'Installing update',
           message: `Version ${info.version} is ready. Billify will restart and install it now.`,
@@ -363,15 +381,13 @@ async function startBlockingUpdateFlow() {
           detail: 'Closing Billify and starting the installer automatically.',
           showRetry: false,
         });
-        cleanup();
         setTimeout(() => {
           autoUpdater.quitAndInstall(false, true);
         }, 1200);
       };
 
       const onError = (error: Error) => {
-        cleanup();
-        reject(error);
+        finishReject(error);
       };
 
       autoUpdater.once('update-available', onAvailable);
@@ -380,10 +396,27 @@ async function startBlockingUpdateFlow() {
       autoUpdater.once('update-downloaded', onDownloaded);
       autoUpdater.once('error', onError);
 
-      void autoUpdater.checkForUpdates().catch((error) => {
-        cleanup();
-        reject(error);
-      });
+      void autoUpdater
+        .checkForUpdates()
+        .then((result) => {
+          // Some updater/provider combinations resolve without firing update-not-available.
+          if (settled || updateStarted || downloadFinished) {
+            return;
+          }
+
+          const version = result?.updateInfo?.version;
+          if (!version || version === app.getVersion()) {
+            finishResolve();
+            return;
+          }
+
+          // If a different version is reported but no update-available event fired,
+          // move into the download phase explicitly instead of hanging on "Checking".
+          void onAvailable({ version });
+        })
+        .catch((error) => {
+          finishReject(error);
+        });
     });
 
     allowUpdateWindowCloseWithoutQuit = true;
