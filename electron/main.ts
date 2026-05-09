@@ -24,6 +24,7 @@ type UpdateWindowState = {
   detail?: string | null;
   error?: boolean;
   showRetry?: boolean;
+  showContinue?: boolean;
 };
 
 async function createMainWindow() {
@@ -159,6 +160,7 @@ function getUpdateWindowHtml() {
           cursor: pointer;
         }
         .retry { background: #1d4ed8; color: white; }
+        .continue { background: #16a34a; color: white; }
         .exit { background: rgba(239,68,68,0.16); color: #fecaca; border: 1px solid rgba(239,68,68,0.24); }
         .hidden { display: none; }
       </style>
@@ -178,6 +180,7 @@ function getUpdateWindowHtml() {
         </div>
         <div class="actions">
           <button class="retry hidden" id="retry">Retry</button>
+          <button class="continue hidden" id="continue">Open Current Version</button>
           <button class="exit hidden" id="exit">Close App</button>
         </div>
       </div>
@@ -189,9 +192,11 @@ function getUpdateWindowHtml() {
         const progressValue = document.getElementById('progressValue');
         const fill = document.getElementById('fill');
         const retry = document.getElementById('retry');
+        const continueBtn = document.getElementById('continue');
         const exit = document.getElementById('exit');
 
         retry.addEventListener('click', () => ipcRenderer.send('update:retry'));
+        continueBtn.addEventListener('click', () => ipcRenderer.send('update:continue'));
         exit.addEventListener('click', () => ipcRenderer.send('update:exit'));
 
         ipcRenderer.on('update-state', (_event, state) => {
@@ -202,6 +207,7 @@ function getUpdateWindowHtml() {
           progressValue.textContent = state.progress == null ? '' : progress + '%';
           fill.style.width = state.progress == null ? '0%' : progress + '%';
           retry.classList.toggle('hidden', !state.showRetry);
+          continueBtn.classList.toggle('hidden', !state.showContinue);
           exit.classList.toggle('hidden', !state.showRetry);
         });
       </script>
@@ -261,7 +267,7 @@ function sendUpdateState(state: UpdateWindowState) {
     return;
   }
 
-  updateWindowCanClose = Boolean(state.showRetry);
+  updateWindowCanClose = Boolean(state.showRetry || state.showContinue);
   updateWindow.setClosable(updateWindowCanClose);
 
   const dispatch = () => {
@@ -393,8 +399,9 @@ async function startBlockingUpdateFlow() {
         ? `Billify could not complete the required update.\n${error.message}`
         : 'Billify could not complete the required update. Please retry or close the app.',
       progress: null,
-      detail: 'The app stays locked until the update succeeds.',
+      detail: 'You can retry the update check, or open the current version while the release metadata is fixed.',
       showRetry: true,
+      showContinue: true,
       error: true,
     });
   } finally {
@@ -404,6 +411,15 @@ async function startBlockingUpdateFlow() {
 
 ipcMain.on('update:retry', () => {
   void startBlockingUpdateFlow();
+});
+
+ipcMain.on('update:continue', async () => {
+  allowUpdateWindowCloseWithoutQuit = true;
+  if (updateWindow && !updateWindow.isDestroyed()) {
+    updateWindow.close();
+  }
+  await openMainWindow();
+  allowUpdateWindowCloseWithoutQuit = false;
 });
 
 ipcMain.on('update:exit', () => {
