@@ -314,10 +314,16 @@ async function startBlockingUpdateFlow() {
       let settled = false;
       let updateStarted = false;
       let downloadFinished = false;
+      const checkTimeoutMs = 15000;
+      let checkTimeout: NodeJS.Timeout | null = null;
 
       const finishResolve = () => {
         if (settled) return;
         settled = true;
+        if (checkTimeout) {
+          clearTimeout(checkTimeout);
+          checkTimeout = null;
+        }
         cleanup();
         resolve();
       };
@@ -325,6 +331,10 @@ async function startBlockingUpdateFlow() {
       const finishReject = (error: unknown) => {
         if (settled) return;
         settled = true;
+        if (checkTimeout) {
+          clearTimeout(checkTimeout);
+          checkTimeout = null;
+        }
         cleanup();
         reject(error);
       };
@@ -395,6 +405,20 @@ async function startBlockingUpdateFlow() {
       autoUpdater.on('download-progress', onProgress);
       autoUpdater.once('update-downloaded', onDownloaded);
       autoUpdater.once('error', onError);
+
+      checkTimeout = setTimeout(() => {
+        if (settled || updateStarted || downloadFinished) {
+          return;
+        }
+        sendUpdateState({
+          title: 'Opening current version',
+          message: 'Update check is taking too long. Billify will open the current version now.',
+          progress: null,
+          detail: 'No update was confirmed within the timeout window.',
+          showRetry: false,
+        });
+        finishResolve();
+      }, checkTimeoutMs);
 
       void autoUpdater
         .checkForUpdates()
