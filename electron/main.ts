@@ -294,6 +294,30 @@ async function openMainWindow() {
   mainWindow = await createMainWindow();
 }
 
+async function closeUpdateWindowBeforeOpeningApp() {
+  allowUpdateWindowCloseWithoutQuit = true;
+  updateWindowCanClose = true;
+
+  const win = updateWindow;
+  if (!win || win.isDestroyed()) {
+    return;
+  }
+
+  win.setClosable(true);
+  await new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+
+    win.once('closed', finish);
+    win.destroy();
+    setTimeout(finish, 1000);
+  });
+}
+
 async function startBlockingUpdateFlow() {
   if (updateCheckInProgress) {
     return;
@@ -319,10 +343,7 @@ async function startBlockingUpdateFlow() {
     const currentVersion = normalizeVersion(app.getVersion());
 
     if (!latestVersion || latestVersion === currentVersion) {
-      allowUpdateWindowCloseWithoutQuit = true;
-      if (updateWindow && !updateWindow.isDestroyed()) {
-        updateWindow.close();
-      }
+      await closeUpdateWindowBeforeOpeningApp();
       await openMainWindow();
       allowUpdateWindowCloseWithoutQuit = false;
       return;
@@ -410,10 +431,7 @@ ipcMain.on('update:retry', () => {
 });
 
 ipcMain.on('update:continue', async () => {
-  allowUpdateWindowCloseWithoutQuit = true;
-  if (updateWindow && !updateWindow.isDestroyed()) {
-    updateWindow.close();
-  }
+  await closeUpdateWindowBeforeOpeningApp();
   await openMainWindow();
   allowUpdateWindowCloseWithoutQuit = false;
 });
