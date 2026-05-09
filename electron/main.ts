@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Notification } from 'electron';
+import { app, BrowserWindow, ipcMain } from 'electron';
 import updaterPkg from 'electron-updater';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,9 +10,23 @@ import { registerUsersIpc } from './ipc/users.ipc';
 import { registerSettingsIpc } from './ipc/settings.ipc';
 
 let mainWindow: BrowserWindow | null = null;
+let updateWindow: BrowserWindow | null = null;
+let updateCheckInProgress = false;
+let updateWindowLoaded = false;
+let allowUpdateWindowCloseWithoutQuit = false;
+let updateWindowCanClose = false;
 const { autoUpdater } = updaterPkg;
 
-async function createWindow() {
+type UpdateWindowState = {
+  title: string;
+  message: string;
+  progress?: number | null;
+  detail?: string | null;
+  error?: boolean;
+  showRetry?: boolean;
+};
+
+async function createMainWindow() {
   const preloadPath = fileURLToPath(new URL('../preload/index.cjs', import.meta.url));
   const win = new BrowserWindow({
     width: 1520,
@@ -38,37 +52,363 @@ async function createWindow() {
   return win;
 }
 
-function setupAutoUpdates() {
-  if (!app.isPackaged || process.platform !== 'win32') {
+function getUpdateWindowHtml() {
+  return `<!DOCTYPE html>
+  <html lang="en">
+    <head>
+      <meta charset="UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <title>Billify Update</title>
+      <style>
+        :root {
+          color-scheme: dark;
+          --bg: #020617;
+          --panel: #0f172a;
+          --panel-2: #111827;
+          --border: rgba(148, 163, 184, 0.2);
+          --text: #f8fafc;
+          --muted: #94a3b8;
+          --accent: #22c55e;
+          --danger: #ef4444;
+        }
+        * { box-sizing: border-box; }
+        body {
+          margin: 0;
+          min-height: 100vh;
+          display: grid;
+          place-items: center;
+          font-family: "Segoe UI", Arial, sans-serif;
+          background:
+            radial-gradient(circle at top, rgba(34,197,94,0.14), transparent 38%),
+            linear-gradient(180deg, #0b1220 0%, var(--bg) 100%);
+          color: var(--text);
+        }
+        .shell {
+          width: min(92vw, 520px);
+          border: 1px solid var(--border);
+          background: linear-gradient(180deg, rgba(15,23,42,0.98), rgba(2,6,23,0.98));
+          border-radius: 24px;
+          padding: 28px;
+          box-shadow: 0 28px 80px rgba(0,0,0,0.45);
+        }
+        .eyebrow {
+          color: var(--accent);
+          font-size: 12px;
+          font-weight: 700;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+        h1 {
+          margin: 14px 0 10px;
+          font-size: 28px;
+          line-height: 1.15;
+        }
+        p {
+          margin: 0;
+          color: var(--muted);
+          font-size: 14px;
+          line-height: 1.6;
+        }
+        .detail {
+          margin-top: 12px;
+          min-height: 20px;
+          color: #cbd5e1;
+          font-size: 13px;
+        }
+        .progress-wrap {
+          margin-top: 22px;
+          padding: 16px;
+          border-radius: 18px;
+          background: rgba(15,23,42,0.72);
+          border: 1px solid var(--border);
+        }
+        .progress-head {
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          margin-bottom: 10px;
+          font-size: 13px;
+          color: var(--muted);
+        }
+        .bar {
+          width: 100%;
+          height: 12px;
+          border-radius: 999px;
+          overflow: hidden;
+          background: rgba(148,163,184,0.15);
+        }
+        .fill {
+          height: 100%;
+          width: 0%;
+          border-radius: inherit;
+          background: linear-gradient(90deg, #22c55e, #86efac);
+          transition: width 220ms ease;
+        }
+        .actions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 10px;
+          margin-top: 20px;
+        }
+        button {
+          border: 0;
+          border-radius: 12px;
+          padding: 10px 14px;
+          font-size: 14px;
+          font-weight: 600;
+          cursor: pointer;
+        }
+        .retry { background: #1d4ed8; color: white; }
+        .exit { background: rgba(239,68,68,0.16); color: #fecaca; border: 1px solid rgba(239,68,68,0.24); }
+        .hidden { display: none; }
+      </style>
+    </head>
+    <body>
+      <div class="shell">
+        <div class="eyebrow">Billify Update</div>
+        <h1 id="title">Checking for updates</h1>
+        <p id="message">Please wait while Billify verifies the latest version.</p>
+        <div class="detail" id="detail"></div>
+        <div class="progress-wrap">
+          <div class="progress-head">
+            <span id="progressLabel">Status</span>
+            <span id="progressValue">0%</span>
+          </div>
+          <div class="bar"><div class="fill" id="fill"></div></div>
+        </div>
+        <div class="actions">
+          <button class="retry hidden" id="retry">Retry</button>
+          <button class="exit hidden" id="exit">Close App</button>
+        </div>
+      </div>
+      <script>
+        const { ipcRenderer } = require('electron');
+        const title = document.getElementById('title');
+        const message = document.getElementById('message');
+        const detail = document.getElementById('detail');
+        const progressValue = document.getElementById('progressValue');
+        const fill = document.getElementById('fill');
+        const retry = document.getElementById('retry');
+        const exit = document.getElementById('exit');
+
+        retry.addEventListener('click', () => ipcRenderer.send('update:retry'));
+        exit.addEventListener('click', () => ipcRenderer.send('update:exit'));
+
+        ipcRenderer.on('update-state', (_event, state) => {
+          title.textContent = state.title;
+          message.textContent = state.message;
+          detail.textContent = state.detail || '';
+          const progress = typeof state.progress === 'number' ? Math.max(0, Math.min(100, Math.round(state.progress))) : 0;
+          progressValue.textContent = state.progress == null ? '' : progress + '%';
+          fill.style.width = state.progress == null ? '0%' : progress + '%';
+          retry.classList.toggle('hidden', !state.showRetry);
+          exit.classList.toggle('hidden', !state.showRetry);
+        });
+      </script>
+    </body>
+  </html>`;
+}
+
+async function ensureUpdateWindow() {
+  if (updateWindow && !updateWindow.isDestroyed()) {
+    return updateWindow;
+  }
+
+  updateWindowLoaded = false;
+  updateWindow = new BrowserWindow({
+    width: 560,
+    height: 420,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    autoHideMenuBar: true,
+    backgroundColor: '#020617',
+    title: 'Billify Update',
+    closable: false,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false,
+      sandbox: false,
+    },
+  });
+
+  updateWindow.on('close', (event) => {
+    if (!updateWindowCanClose && !allowUpdateWindowCloseWithoutQuit) {
+      event.preventDefault();
+    }
+  });
+
+  updateWindow.on('closed', () => {
+    updateWindow = null;
+    updateWindowLoaded = false;
+    if (!mainWindow && !allowUpdateWindowCloseWithoutQuit) {
+      app.quit();
+    }
+  });
+
+  updateWindow.webContents.once('did-finish-load', () => {
+    updateWindowLoaded = true;
+  });
+
+  await updateWindow.loadURL(`data:text/html;charset=UTF-8,${encodeURIComponent(getUpdateWindowHtml())}`);
+  return updateWindow;
+}
+
+function sendUpdateState(state: UpdateWindowState) {
+  if (!updateWindow || updateWindow.isDestroyed()) {
     return;
   }
 
-  autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
-  autoUpdater.on('update-available', (info) => {
-    console.log(`Update available: ${info.version}`);
-  });
-  autoUpdater.on('update-not-available', () => {
-    console.log('No update available.');
-  });
-  autoUpdater.on('download-progress', (progress) => {
-    console.log(`Update download progress: ${Math.round(progress.percent)}%`);
-  });
-  autoUpdater.on('update-downloaded', (info) => {
-    console.log(`Update downloaded: ${info.version}. It will install when the app quits.`);
-    if (Notification.isSupported()) {
-      new Notification({
-        title: 'Billify update ready',
-        body: 'A new version is ready and will install when you close the app.',
-      }).show();
-    }
-  });
-  autoUpdater.on('error', (error) => {
-    console.error('Auto update error:', error);
-  });
+  updateWindowCanClose = Boolean(state.showRetry);
+  updateWindow.setClosable(updateWindowCanClose);
 
-  void autoUpdater.checkForUpdatesAndNotify();
+  const dispatch = () => {
+    updateWindow?.webContents.send('update-state', state);
+  };
+
+  if (updateWindowLoaded) {
+    dispatch();
+  } else {
+    updateWindow.webContents.once('did-finish-load', dispatch);
+  }
 }
+
+async function openMainWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.focus();
+    return;
+  }
+
+  mainWindow = await createMainWindow();
+}
+
+async function startBlockingUpdateFlow() {
+  if (updateCheckInProgress) {
+    return;
+  }
+  updateCheckInProgress = true;
+
+  try {
+    await ensureUpdateWindow();
+    sendUpdateState({
+      title: 'Checking for updates',
+      message: 'Please wait while Billify verifies the latest version.',
+      progress: null,
+      detail: 'Checking GitHub releases for the latest Billify build.',
+      showRetry: false,
+    });
+
+    autoUpdater.autoDownload = false;
+    autoUpdater.autoInstallOnAppQuit = false;
+
+    await new Promise<void>((resolve, reject) => {
+      const cleanup = () => {
+        autoUpdater.removeListener('update-available', onAvailable);
+        autoUpdater.removeListener('update-not-available', onNotAvailable);
+        autoUpdater.removeListener('download-progress', onProgress);
+        autoUpdater.removeListener('update-downloaded', onDownloaded);
+        autoUpdater.removeListener('error', onError);
+      };
+
+      const onAvailable = async (info: { version: string }) => {
+        sendUpdateState({
+          title: 'New update found',
+          message: `Version ${info.version} is required before Billify can open. Downloading now.`,
+          progress: 0,
+          detail: 'Starting secure download.',
+          showRetry: false,
+        });
+        try {
+          await autoUpdater.downloadUpdate();
+        } catch (error) {
+          cleanup();
+          reject(error);
+        }
+      };
+
+      const onNotAvailable = () => {
+        cleanup();
+        resolve();
+      };
+
+      const formatBytes = (value: number) => {
+        if (!Number.isFinite(value) || value <= 0) return '0 MB';
+        return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+      };
+
+      const onProgress = (progress: { percent: number; transferred: number; total: number; bytesPerSecond: number }) => {
+        sendUpdateState({
+          title: 'Downloading update',
+          message: 'Billify is downloading the required update. The app will open after it finishes.',
+          progress: progress.percent,
+          detail: `${Math.round(progress.percent)}% • ${formatBytes(progress.transferred)} / ${formatBytes(progress.total)} • ${formatBytes(progress.bytesPerSecond)}/s`,
+          showRetry: false,
+        });
+      };
+
+      const onDownloaded = (info: { version: string }) => {
+        sendUpdateState({
+          title: 'Installing update',
+          message: `Version ${info.version} is ready. Billify will restart and install it now.`,
+          progress: 100,
+          detail: 'Closing Billify and starting the installer automatically.',
+          showRetry: false,
+        });
+        cleanup();
+        setTimeout(() => {
+          autoUpdater.quitAndInstall(false, true);
+        }, 1200);
+      };
+
+      const onError = (error: Error) => {
+        cleanup();
+        reject(error);
+      };
+
+      autoUpdater.once('update-available', onAvailable);
+      autoUpdater.once('update-not-available', onNotAvailable);
+      autoUpdater.on('download-progress', onProgress);
+      autoUpdater.once('update-downloaded', onDownloaded);
+      autoUpdater.once('error', onError);
+
+      void autoUpdater.checkForUpdates().catch((error) => {
+        cleanup();
+        reject(error);
+      });
+    });
+
+    allowUpdateWindowCloseWithoutQuit = true;
+    if (updateWindow && !updateWindow.isDestroyed()) {
+      updateWindow.close();
+    }
+    await openMainWindow();
+    allowUpdateWindowCloseWithoutQuit = false;
+  } catch (error: any) {
+    console.error('Auto update error:', error);
+    sendUpdateState({
+      title: 'Update required',
+      message: error?.message
+        ? `Billify could not complete the required update.\n${error.message}`
+        : 'Billify could not complete the required update. Please retry or close the app.',
+      progress: null,
+      detail: 'The app stays locked until the update succeeds.',
+      showRetry: true,
+      error: true,
+    });
+  } finally {
+    updateCheckInProgress = false;
+  }
+}
+
+ipcMain.on('update:retry', () => {
+  void startBlockingUpdateFlow();
+});
+
+ipcMain.on('update:exit', () => {
+  app.quit();
+});
 
 app.whenReady().then(async () => {
   registerAuthIpc();
@@ -77,8 +417,11 @@ app.whenReady().then(async () => {
   registerSplitsIpc();
   registerUsersIpc();
   registerSettingsIpc();
-  mainWindow = await createWindow();
-  setupAutoUpdates();
+  if (app.isPackaged && process.platform === 'win32') {
+    await startBlockingUpdateFlow();
+    return;
+  }
+  await openMainWindow();
 });
 
 app.on('window-all-closed', () => {
@@ -89,6 +432,6 @@ app.on('window-all-closed', () => {
 
 app.on('activate', async () => {
   if (BrowserWindow.getAllWindows().length === 0) {
-    mainWindow = await createWindow();
+    await openMainWindow();
   }
 });
