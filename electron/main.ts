@@ -308,6 +308,7 @@ async function startBlockingUpdateFlow() {
 
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = false;
+    autoUpdater.allowPrerelease = true;
 
     await new Promise<void>((resolve, reject) => {
       const cleanup = () => {
