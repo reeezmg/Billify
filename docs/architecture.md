@@ -115,7 +115,7 @@ It conditionally shows admin links when `session.role === 'admin'`.
 - `src/pages/TenantBills.tsx`: show one tenant's bill history, payment summary, badges, reminder actions, payment updates, and payment dates
 - `src/pages/MyBills.tsx`: create and edit monthly bills in a modal, list bills with split status, then navigate to splits
 - `src/pages/BillSplit.tsx`: enter readings, adjust split values, save drafts or finalize splits, and sync tenant present readings
-- `src/pages/Users.tsx`: admin user management
+- `src/pages/Users.tsx`: admin user management with add/edit/delete modal actions
 - `src/pages/Settings.tsx`: company and WhatsApp configuration
 
 ## Desktop API Boundary

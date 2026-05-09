@@ -40,6 +40,12 @@ export async function changePassword(userId: number, password: string) {
   }
 }
 
+export function syncSessionUser(user: SessionUser) {
+  if (currentUser?.id === user.id) {
+    currentUser = { ...user };
+  }
+}
+
 export async function requireAuth() {
   if (!currentUser) {
     throw new Error('Not authenticated');

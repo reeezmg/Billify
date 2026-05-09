@@ -45,6 +45,13 @@ export default function Tenants() {
     setIsAddOpen(true);
   };
 
+  const handleSoftDelete = async (tenant: Tenant) => {
+    const confirmed = window.confirm(`Soft delete ${tenant.name} (${tenant.room_no})? The tenant will become inactive but bill history will remain.`);
+    if (!confirmed) return;
+    await window.api.tenants.delete(tenant.id);
+    refresh();
+  };
+
   useEffect(() => {
     refresh();
   }, []);
@@ -210,6 +217,13 @@ export default function Tenants() {
                       onClick={() => openEditModal(tenant)}
                     >
                       Edit
+                    </button>
+                    <button
+                      className="rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-100 transition hover:bg-red-500/20"
+                      onClick={() => handleSoftDelete(tenant)}
+                      disabled={!tenant.active}
+                    >
+                      {tenant.active ? 'Delete' : 'Inactive'}
                     </button>
                     <button
                       className="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-white/15"

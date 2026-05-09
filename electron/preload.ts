@@ -12,6 +12,7 @@ const api = {
     list: () => ipcRenderer.invoke('tenants:list') as Promise<Tenant[]>,
     active: () => ipcRenderer.invoke('tenants:active') as Promise<Tenant[]>,
     save: (tenant: Partial<Tenant>) => ipcRenderer.invoke('tenants:save', tenant),
+    delete: (tenantId: number) => ipcRenderer.invoke('tenants:delete', tenantId),
     getBills: (tenantId: number) => ipcRenderer.invoke('tenants:getBills', tenantId) as Promise<TenantBillHistory>,
     updateBillPayment: (
       tenantBillId: number,
@@ -32,10 +33,12 @@ const api = {
     get: (splitId: number) => ipcRenderer.invoke('splits:get', splitId),
     save: (payload: any) => ipcRenderer.invoke('splits:save', payload),
     saveDraft: (payload: any) => ipcRenderer.invoke('splits:saveDraft', payload),
+    downloadAll: (splitId: number) => ipcRenderer.invoke('splits:downloadAll', splitId),
   },
   users: {
     list: () => ipcRenderer.invoke('users:list'),
     save: (user: any) => ipcRenderer.invoke('users:save', user),
+    delete: (userId: number) => ipcRenderer.invoke('users:delete', userId),
     resetPassword: (userId: number, password: string) => ipcRenderer.invoke('users:resetPassword', userId, password),
   },
   whatsapp: {

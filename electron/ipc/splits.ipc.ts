@@ -1,6 +1,8 @@
 import { ipcMain } from 'electron';
 import { calculateSplit } from '../services/split.service';
 import { execute, queryAll, queryOne, transaction } from '../db/client';
+import { dialog, shell } from 'electron';
+import { exportTenantBillPdfs } from '../services/pdf.service';
 import type { SplitBillInput } from '../../src/types';
 
 export function registerSplitsIpc() {
@@ -56,7 +58,7 @@ export function registerSplitsIpc() {
           (bill_split_id, tenant_id, previous_reading, present_reading, consumed_unit, fixed_charge_calc, fixed_adjust,
            energy_charge, extra_charge_calc, extra_adjust, tax, sub_total, interest_charge_calc, interest_adjust,
            other_charge_calc, payment_status, payment_method, payment_date, payable)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       for (const calc of calculated.rows) {
         const row = payload.rows.find((item: any) => item.tenant_id === calc.tenant_id);
@@ -88,4 +90,28 @@ export function registerSplitsIpc() {
   };
   ipcMain.handle('splits:saveDraft', persistSplit);
   ipcMain.handle('splits:save', persistSplit);
+  ipcMain.handle('splits:downloadAll', async (_event, splitId: number) => {
+    const split = await queryOne<any>(
+      `SELECT bs.id, bs.reading_date, b.period_month, b.period_year
+       FROM bill_splits bs
+       INNER JOIN bills b ON b.id = bs.bill_id
+       WHERE bs.id = ?`,
+      [splitId],
+    );
+    if (!split) {
+      throw new Error('Split not found');
+    }
+
+    const result = await dialog.showOpenDialog({
+      properties: ['openDirectory', 'createDirectory'],
+      title: 'Choose a folder for tenant bill PDFs',
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return { ok: false as const, canceled: true as const };
+    }
+
+    const exportResult = await exportTenantBillPdfs(splitId, result.filePaths[0]);
+    await shell.openPath(exportResult.folderPath).catch(() => undefined);
+    return { ok: true as const, ...exportResult };
+  });
 }

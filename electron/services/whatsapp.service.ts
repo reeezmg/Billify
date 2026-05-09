@@ -14,7 +14,10 @@ export async function sendTemplateWithMedia(params: {
   to: string;
   tenantName: string;
   period: string;
+  billNumber: string;
+  room: string;
   amount: string;
+  payDate: string;
   mediaId: string;
 }) {
   const client = axios.create({
@@ -46,7 +49,10 @@ export async function sendTemplateWithMedia(params: {
           parameters: [
             { type: 'text', text: params.tenantName },
             { type: 'text', text: params.period },
+            { type: 'text', text: params.billNumber },
+            { type: 'text', text: params.room },
             { type: 'text', text: params.amount },
+            { type: 'text', text: params.payDate },
           ],
         },
       ],

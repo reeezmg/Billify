@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import { generateTenantBillPdf } from '../services/pdf.service';
 import { execute, queryAll, queryOne } from '../db/client';
 import { uploadMedia, sendTemplateWithMedia, sendTextMessage } from '../services/whatsapp.service';
+import { getBillPayDate, getBillPeriodLabel, getTenantBillNumber } from '../../src/lib/tenantBillPdf';
 
 export function registerWhatsappIpc() {
   ipcMain.handle('whatsapp:previewPdf', async (_event, splitId: number, tenantBillId: number) => {
@@ -18,7 +19,10 @@ export function registerWhatsappIpc() {
     return result.filePath;
   });
   ipcMain.handle('whatsapp:sendAll', async (_event, splitId: number) => {
-    const split = await queryOne<any>('SELECT bs.*, b.period_month, b.period_year FROM bill_splits bs INNER JOIN bills b ON b.id = bs.bill_id WHERE bs.id = ?', [splitId]);
+    const split = await queryOne<any>(
+      'SELECT bs.*, b.period_month, b.period_year, b.fixed_unit, b.fixed_unit_price, b.energy_unit_price, b.tax_percent FROM bill_splits bs INNER JOIN bills b ON b.id = bs.bill_id WHERE bs.id = ?',
+      [splitId],
+    );
     const settings = await queryAll<{ key: string; value: string | null }>('SELECT key, value FROM app_config');
     const config = Object.fromEntries(settings.map((entry) => [entry.key, entry.value ?? '']));
     const rows = await queryAll<any>(
@@ -44,8 +48,11 @@ export function registerWhatsappIpc() {
           language: config.whatsapp_template_language || 'en',
           to: row.phone,
           tenantName: row.tenant_name,
-          period: `${split.period_month}/${split.period_year}`,
+          period: getBillPeriodLabel(split),
+          billNumber: getTenantBillNumber(split, row),
+          room: row.room_no,
           amount: String(row.payable),
+          payDate: getBillPayDate(split.reading_date),
           mediaId: media.mediaId,
         });
         await execute('UPDATE tenant_bills SET whatsapp_sent_at = datetime(\'now\'), whatsapp_message_id = ? WHERE id = ?', [

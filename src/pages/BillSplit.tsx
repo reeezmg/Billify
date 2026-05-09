@@ -39,6 +39,8 @@ export default function BillSplit() {
   const [editingCell, setEditingCell] = useState<EditingCell>(null);
   const [isFinalizeModalOpen, setIsFinalizeModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [exportMessage, setExportMessage] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -49,9 +51,9 @@ export default function BillSplit() {
       ]);
       const activeTenants = await window.api.tenants.active();
       const splitDetails = splitResponse ? await window.api.splits.get(splitResponse.id) : null;
-      const rowsFromDb = splitDetails?.rows ?? [];
+      const rowsFromDb = splitDetails?.rows ?? splitDetails?.split?.rows ?? [];
       setBill(selectedBill);
-      setSplit(splitResponse);
+      setSplit(splitDetails?.split ?? splitResponse);
       if (rowsFromDb.length > 0) {
         setRows(
           rowsFromDb.map((row: any) => ({
@@ -139,7 +141,7 @@ export default function BillSplit() {
       );
       if (status === 'finalized') {
         const splitDetails = await window.api.splits.get(split.id);
-        setSplit(splitDetails);
+        setSplit(splitDetails?.split ?? splitDetails ?? split);
       }
     } finally {
       setIsSubmitting(false);
@@ -153,8 +155,33 @@ export default function BillSplit() {
     setIsFinalizeModalOpen(false);
   };
 
+  const handleDownload = async () => {
+    if (!split || !bill) return;
+    setIsDownloading(true);
+    setExportMessage(null);
+    try {
+      await persistSplit('finalized');
+      const result = await window.api.splits.downloadAll(split.id);
+      if (result?.ok) {
+        setExportMessage(`Downloaded ${result.fileCount} bill PDF${result.fileCount === 1 ? '' : 's'}.`);
+        setIsFinalizeModalOpen(false);
+      } else if (result?.canceled) {
+        setExportMessage('Download canceled.');
+      }
+    } catch (error: any) {
+      setExportMessage(error?.message ?? 'Download failed. Please try again.');
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
+      {exportMessage ? (
+        <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200">
+          {exportMessage}
+        </div>
+      ) : null}
 
       {bill ? (
         <div className="space-y-4">
@@ -227,15 +254,15 @@ export default function BillSplit() {
           <div className="w-full max-w-lg rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/40">
             <h2 className="text-2xl font-semibold text-white">Finalizing bill</h2>
             <p className="mt-2 text-sm text-slate-400">
-              Finalizing this bill will create tenant bills for all active tenants. You can save the final split or send it
-              directly through WhatsApp.
+              Finalizing this bill will create tenant bills for all active tenants. You can finalize only, download all tenant
+              bills into a folder, or send them directly through WhatsApp.
             </p>
             <div className="mt-6 flex flex-wrap justify-end gap-3">
               <button
                 type="button"
                 className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-white transition hover:bg-white/10"
                 onClick={() => setIsFinalizeModalOpen(false)}
-                disabled={isSubmitting}
+                disabled={isSubmitting || isDownloading}
               >
                 Cancel
               </button>
@@ -246,15 +273,23 @@ export default function BillSplit() {
                   await persistSplit('finalized');
                   setIsFinalizeModalOpen(false);
                 }}
-                disabled={isSubmitting}
+                disabled={isSubmitting || isDownloading}
               >
-                Save
+                Finalize
+              </button>
+              <button
+                type="button"
+                className="rounded-xl bg-slate-800 px-4 py-2 text-white transition hover:bg-slate-700"
+                onClick={handleDownload}
+                disabled={isSubmitting || isDownloading}
+              >
+                {isDownloading ? 'Downloading...' : 'Download PDFs'}
               </button>
               <button
                 type="button"
                 className="rounded-xl bg-brand-500 px-4 py-2 text-white transition hover:bg-brand-400"
                 onClick={handleSend}
-                disabled={isSubmitting}
+                disabled={isSubmitting || isDownloading}
               >
                 Send
               </button>

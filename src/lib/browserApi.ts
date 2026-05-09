@@ -1,4 +1,6 @@
 import { calculateSplit } from './calc';
+import { buildTenantBillPdfBytes, getBillPayDate, getBillPeriodLabel, getTenantBillFileName, getTenantBillNumber } from './tenantBillPdf';
+import { sendWhatsAppTemplateWithMedia, uploadWhatsAppMedia } from './whatsappClient';
 import type {
   AppSettings,
   Bill,
@@ -209,6 +211,15 @@ export function createBrowserApi() {
       async active() {
         return clone(getState().tenants.filter((tenant) => tenant.active));
       },
+      async delete(tenantId: number) {
+        setState((state) => ({
+          ...state,
+          tenants: state.tenants.map((tenant) =>
+            tenant.id === tenantId ? { ...tenant, active: 0 } : tenant,
+          ),
+        }));
+        return { ok: true };
+      },
       async getBills(tenantId: number): Promise<TenantBillHistory> {
         const state = getState();
         const tenant = state.tenants.find((item) => item.id === tenantId) ?? null;
@@ -398,6 +409,49 @@ export function createBrowserApi() {
       async saveDraft(payload: any) {
         persistSplit(payload);
       },
+      async downloadAll(splitId: number) {
+        const state = getState();
+        const split = state.splits.find((item) => item.id === splitId);
+        if (!split) {
+          throw new Error('Split not found');
+        }
+
+        const bill = state.bills.find((item) => item.id === split.bill_id);
+        if (!bill) {
+          throw new Error('Bill not found');
+        }
+
+        const picker = (window as any).showDirectoryPicker;
+        if (typeof picker !== 'function') {
+          throw new Error('Folder downloads are only available in Chromium-based browsers.');
+        }
+
+        const root = await picker.call(window, { mode: 'readwrite', startIn: 'downloads' });
+        for (const row of split.rows ?? []) {
+          const pdfBytes = await buildTenantBillPdfBytes({
+            settings: state.settings,
+            bill: {
+              period_month: bill.period_month,
+              period_year: bill.period_year,
+              fixed_unit: bill.fixed_unit,
+              fixed_unit_price: bill.fixed_unit_price,
+              energy_unit_price: bill.energy_unit_price,
+              tax_percent: bill.tax_percent,
+            },
+            split: {
+              id: split.id,
+              reading_date: split.reading_date,
+            },
+            row,
+          });
+          const fileHandle = await root.getFileHandle(getTenantBillFileName(split.id, row), { create: true });
+          const writable = await fileHandle.createWritable();
+          await writable.write(pdfBytes);
+          await writable.close();
+        }
+
+        return { ok: true as const, folderPath: root.name, fileCount: (split.rows ?? []).length };
+      },
     },
     users: {
       async list() {
@@ -423,11 +477,35 @@ export function createBrowserApi() {
               email: user.email ?? '',
               role: user.role ?? 'staff',
               must_change_password: Boolean(user.must_change_password),
-              password: user.password ?? 'ChangeMe123!',
+              password: user.password ?? 'qwertyuiop',
             });
           }
           return { ...state, users };
         });
+      },
+      async delete(userId: number) {
+        setState((state) => {
+          if (state.sessionUserId === userId) {
+            throw new Error('You cannot delete your own account');
+          }
+
+          const target = state.users.find((user) => user.id === userId);
+          if (!target) {
+            throw new Error('User not found');
+          }
+          if (target.role === 'admin') {
+            const remainingAdmins = state.users.filter((user) => user.role === 'admin' && user.id !== userId);
+            if (remainingAdmins.length === 0) {
+              throw new Error('At least one admin must remain');
+            }
+          }
+
+          return {
+            ...state,
+            users: state.users.filter((user) => user.id !== userId),
+          };
+        });
+        return true;
       },
       async resetPassword(userId: number, password: string) {
         setState((state) => ({
@@ -441,13 +519,105 @@ export function createBrowserApi() {
         return 'browser://preview';
       },
       async sendAll(splitId?: number) {
-        if (splitId) {
-          setState((state) => ({
-            ...state,
-            splits: state.splits.map((split) => (split.id === splitId ? { ...split, status: 'sent' } : split)),
-          }));
+        if (!splitId) {
+          return { ok: true };
         }
-        return { ok: true };
+
+        const state = getState();
+        const split = state.splits.find((item) => item.id === splitId);
+        if (!split) {
+          throw new Error('Split not found');
+        }
+
+        const bill = state.bills.find((item) => item.id === split.bill_id);
+        if (!bill) {
+          throw new Error('Bill not found');
+        }
+
+        if (!state.settings.whatsapp_phone_number_id || !state.settings.whatsapp_access_token) {
+          throw new Error('WhatsApp settings are missing. Please configure the phone number ID and access token first.');
+        }
+
+        const results: Array<{ tenant_id: number; ok: boolean; message?: string }> = [];
+        for (const row of split.rows) {
+          const tenant = state.tenants.find((item) => item.id === row.tenant_id);
+          const currentPhone = tenant?.phone ?? row.phone;
+          const currentTenantName = tenant?.name ?? row.tenant_name;
+          const currentRoom = tenant?.room_no ?? row.room_no;
+
+          if (!currentPhone) {
+            results.push({ tenant_id: row.tenant_id, ok: false, message: 'Phone number missing' });
+            continue;
+          }
+          try {
+            const pdfBytes = await buildTenantBillPdfBytes({
+              settings: state.settings,
+              bill: {
+                period_month: bill.period_month,
+                period_year: bill.period_year,
+                fixed_unit: bill.fixed_unit,
+                fixed_unit_price: bill.fixed_unit_price,
+                energy_unit_price: bill.energy_unit_price,
+                tax_percent: bill.tax_percent,
+              },
+              split: {
+                id: split.id,
+                reading_date: split.reading_date,
+              },
+              row: {
+                ...row,
+                phone: currentPhone,
+                tenant_name: currentTenantName,
+                room_no: currentRoom,
+              },
+            });
+            const media = await uploadWhatsAppMedia({
+              phoneNumberId: state.settings.whatsapp_phone_number_id,
+              accessToken: state.settings.whatsapp_access_token,
+              fileBytes: pdfBytes,
+              fileName: getTenantBillFileName(split.id, row),
+            });
+            const sent = await sendWhatsAppTemplateWithMedia({
+              phoneNumberId: state.settings.whatsapp_phone_number_id,
+              accessToken: state.settings.whatsapp_access_token,
+              templateName: state.settings.whatsapp_template_name || 'electricity_bill',
+              language: state.settings.whatsapp_template_language || 'en',
+              to: currentPhone,
+              tenantName: currentTenantName,
+              period: getBillPeriodLabel(bill),
+              billNumber: getTenantBillNumber(split, { ...row, room_no: currentRoom }),
+              room: currentRoom,
+              amount: String(row.payable),
+              payDate: getBillPayDate(split.reading_date),
+              mediaId: media.mediaId,
+            });
+            results.push({ tenant_id: row.tenant_id, ok: true });
+            setState((current) => ({
+              ...current,
+              splits: current.splits.map((item) =>
+                item.id === splitId
+                  ? {
+                      ...item,
+                      status: 'sent',
+                      rows: item.rows.map((existingRow: any) =>
+                        (existingRow.id ?? tenantBillRowId(item.id, existingRow.tenant_id)) === (row.id ?? tenantBillRowId(split.id, row.tenant_id))
+                          ? {
+                              ...existingRow,
+                              whatsapp_sent_at: new Date().toISOString(),
+                              whatsapp_message_id: sent.messageId,
+                            }
+                          : existingRow,
+                      ),
+                    }
+                  : item,
+              ),
+            }));
+          } catch (error: any) {
+            results.push({ tenant_id: row.tenant_id, ok: false, message: error?.message ?? 'Failed' });
+          }
+        }
+
+        return { ok: results.some((item) => item.ok), results };
       },
       async sendReminder(tenantBillId?: number) {
         return { ok: Boolean(tenantBillId), messageId: 'browser://reminder' };

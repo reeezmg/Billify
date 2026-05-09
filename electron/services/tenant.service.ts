@@ -55,6 +55,16 @@ export async function getActiveTenants() {
   return queryAll<Tenant>('SELECT * FROM tenants WHERE active = 1 ORDER BY room_no, name');
 }
 
+export async function softDeleteTenant(tenantId: number) {
+  const tenant = await queryOne<Tenant>('SELECT * FROM tenants WHERE id = ?', [tenantId]);
+  if (!tenant) {
+    throw new Error('Tenant not found');
+  }
+
+  await execute('UPDATE tenants SET active = 0, updated_at = datetime(\'now\') WHERE id = ?', [tenantId]);
+  return { ok: true };
+}
+
 export async function getTenantBillHistory(tenantId: number): Promise<TenantBillHistoryPayload> {
   const tenant = await queryOne<Tenant>('SELECT * FROM tenants WHERE id = ?', [tenantId]);
   const bills = await queryAll<TenantBillHistoryRecord>(
