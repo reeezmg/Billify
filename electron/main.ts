@@ -15,6 +15,7 @@ let updateCheckInProgress = false;
 let updateWindowLoaded = false;
 let allowUpdateWindowCloseWithoutQuit = false;
 let updateWindowCanClose = false;
+let openingMainWindowAfterUpdate = false;
 const { autoUpdater } = updaterPkg;
 
 type UpdateWindowState = {
@@ -295,6 +296,7 @@ async function openMainWindow() {
 }
 
 async function closeUpdateWindowBeforeOpeningApp() {
+  openingMainWindowAfterUpdate = true;
   allowUpdateWindowCloseWithoutQuit = true;
   updateWindowCanClose = true;
 
@@ -345,6 +347,7 @@ async function startBlockingUpdateFlow() {
     if (!latestVersion || latestVersion === currentVersion) {
       await closeUpdateWindowBeforeOpeningApp();
       await openMainWindow();
+      openingMainWindowAfterUpdate = false;
       allowUpdateWindowCloseWithoutQuit = false;
       return;
     }
@@ -433,6 +436,7 @@ ipcMain.on('update:retry', () => {
 ipcMain.on('update:continue', async () => {
   await closeUpdateWindowBeforeOpeningApp();
   await openMainWindow();
+  openingMainWindowAfterUpdate = false;
   allowUpdateWindowCloseWithoutQuit = false;
 });
 
@@ -455,6 +459,10 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
+  if (openingMainWindowAfterUpdate) {
+    return;
+  }
+
   if (process.platform !== 'darwin') {
     app.quit();
   }
