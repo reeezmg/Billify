@@ -27,6 +27,10 @@ type UpdateWindowState = {
   showContinue?: boolean;
 };
 
+function normalizeVersion(value: string | null | undefined) {
+  return String(value ?? '').trim().replace(/^v/i, '');
+}
+
 async function createMainWindow() {
   const preloadPath = fileURLToPath(new URL('../preload/index.cjs', import.meta.url));
   const win = new BrowserWindow({
@@ -310,72 +314,36 @@ async function startBlockingUpdateFlow() {
     autoUpdater.autoInstallOnAppQuit = false;
     autoUpdater.allowPrerelease = true;
 
+    const result = await autoUpdater.checkForUpdates();
+    const latestVersion = normalizeVersion(result?.updateInfo?.version);
+    const currentVersion = normalizeVersion(app.getVersion());
+
+    if (!latestVersion || latestVersion === currentVersion) {
+      allowUpdateWindowCloseWithoutQuit = true;
+      if (updateWindow && !updateWindow.isDestroyed()) {
+        updateWindow.close();
+      }
+      await openMainWindow();
+      allowUpdateWindowCloseWithoutQuit = false;
+      return;
+    }
+
+    const formatBytes = (value: number) => {
+      if (!Number.isFinite(value) || value <= 0) return '0 MB';
+      return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+    };
+
     await new Promise<void>((resolve, reject) => {
-      let settled = false;
-      let updateStarted = false;
-      let downloadFinished = false;
-      const checkTimeoutMs = 15000;
-      let checkTimeout: NodeJS.Timeout | null = null;
-
-      const finishResolve = () => {
-        if (settled) return;
-        settled = true;
-        if (checkTimeout) {
-          clearTimeout(checkTimeout);
-          checkTimeout = null;
-        }
-        cleanup();
-        resolve();
-      };
-
-      const finishReject = (error: unknown) => {
-        if (settled) return;
-        settled = true;
-        if (checkTimeout) {
-          clearTimeout(checkTimeout);
-          checkTimeout = null;
-        }
-        cleanup();
-        reject(error);
-      };
-
       const cleanup = () => {
-        autoUpdater.removeListener('update-available', onAvailable);
-        autoUpdater.removeListener('update-not-available', onNotAvailable);
         autoUpdater.removeListener('download-progress', onProgress);
         autoUpdater.removeListener('update-downloaded', onDownloaded);
         autoUpdater.removeListener('error', onError);
       };
 
-      const onAvailable = async (info: { version: string }) => {
-        updateStarted = true;
-        sendUpdateState({
-          title: 'New update found',
-          message: `Version ${info.version} is required before Billify can open. Downloading now.`,
-          progress: 0,
-          detail: 'Starting secure download.',
-          showRetry: false,
-        });
-        try {
-          await autoUpdater.downloadUpdate();
-        } catch (error) {
-          finishReject(error);
-        }
-      };
-
-      const onNotAvailable = () => {
-        finishResolve();
-      };
-
-      const formatBytes = (value: number) => {
-        if (!Number.isFinite(value) || value <= 0) return '0 MB';
-        return `${(value / (1024 * 1024)).toFixed(1)} MB`;
-      };
-
       const onProgress = (progress: { percent: number; transferred: number; total: number; bytesPerSecond: number }) => {
         sendUpdateState({
           title: 'Downloading update',
-          message: 'Billify is downloading the required update. The app will open after it finishes.',
+          message: `Version ${latestVersion} is required before Billify can open. Downloading now.`,
           progress: progress.percent,
           detail: `${Math.round(progress.percent)}% • ${formatBytes(progress.transferred)} / ${formatBytes(progress.total)} • ${formatBytes(progress.bytesPerSecond)}/s`,
           showRetry: false,
@@ -383,7 +351,7 @@ async function startBlockingUpdateFlow() {
       };
 
       const onDownloaded = (info: { version: string }) => {
-        downloadFinished = true;
+        cleanup();
         sendUpdateState({
           title: 'Installing update',
           message: `Version ${info.version} is ready. Billify will restart and install it now.`,
@@ -394,61 +362,31 @@ async function startBlockingUpdateFlow() {
         setTimeout(() => {
           autoUpdater.quitAndInstall(false, true);
         }, 1200);
+        resolve();
       };
 
       const onError = (error: Error) => {
-        finishReject(error);
+        cleanup();
+        reject(error);
       };
 
-      autoUpdater.once('update-available', onAvailable);
-      autoUpdater.once('update-not-available', onNotAvailable);
       autoUpdater.on('download-progress', onProgress);
       autoUpdater.once('update-downloaded', onDownloaded);
       autoUpdater.once('error', onError);
 
-      checkTimeout = setTimeout(() => {
-        if (settled || updateStarted || downloadFinished) {
-          return;
-        }
-        sendUpdateState({
-          title: 'Opening current version',
-          message: 'Update check is taking too long. Billify will open the current version now.',
-          progress: null,
-          detail: 'No update was confirmed within the timeout window.',
-          showRetry: false,
-        });
-        finishResolve();
-      }, checkTimeoutMs);
+      sendUpdateState({
+        title: 'New update found',
+        message: `Version ${latestVersion} is required before Billify can open. Downloading now.`,
+        progress: 0,
+        detail: 'Starting secure download.',
+        showRetry: false,
+      });
 
-      void autoUpdater
-        .checkForUpdates()
-        .then((result) => {
-          // Some updater/provider combinations resolve without firing update-not-available.
-          if (settled || updateStarted || downloadFinished) {
-            return;
-          }
-
-          const version = result?.updateInfo?.version;
-          if (!version || version === app.getVersion()) {
-            finishResolve();
-            return;
-          }
-
-          // If a different version is reported but no update-available event fired,
-          // move into the download phase explicitly instead of hanging on "Checking".
-          void onAvailable({ version });
-        })
-        .catch((error) => {
-          finishReject(error);
-        });
+      void autoUpdater.downloadUpdate().catch((error) => {
+        cleanup();
+        reject(error);
+      });
     });
-
-    allowUpdateWindowCloseWithoutQuit = true;
-    if (updateWindow && !updateWindow.isDestroyed()) {
-      updateWindow.close();
-    }
-    await openMainWindow();
-    allowUpdateWindowCloseWithoutQuit = false;
   } catch (error: any) {
     console.error('Auto update error:', error);
     sendUpdateState({
