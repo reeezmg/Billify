@@ -1,22 +1,12 @@
-import PDFDocument from 'pdfkit/js/pdfkit.standalone.js';
 import dayjs from 'dayjs';
-import type { AppSettings, TenantBillWithTenant } from '../types';
+import PDFDocument from 'pdfkit/js/pdfkit.standalone.js';
+import { sanitizeFilenamePart } from './tenantBillPdf';
+import type { AppSettings, ManagementBatchDetail, ManagementTenantBillRow } from '../types';
 
-type TenantBillPdfContext = {
+type ManagementBillPdfContext = {
   settings: AppSettings;
-  bill: {
-    period_month: number;
-    period_year: number;
-    fixed_unit: number;
-    fixed_unit_price: number;
-    energy_unit_price: number;
-    tax_percent: number;
-  };
-  split: {
-    id: number;
-    reading_date: string;
-  };
-  row: TenantBillWithTenant;
+  batch: ManagementBatchDetail['batch'];
+  row: ManagementTenantBillRow;
 };
 
 function toPdfBuffer(chunks: Uint8Array[]) {
@@ -30,41 +20,29 @@ function toPdfBuffer(chunks: Uint8Array[]) {
   return merged;
 }
 
-export function sanitizeFilenamePart(value: string) {
-  return value
-    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '-')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 120) || 'bill';
-}
-
-export function getTenantBillFileName(splitId: number, row: TenantBillWithTenant) {
+export function getManagementBillFileName(batchId: number, row: ManagementTenantBillRow) {
   const room = sanitizeFilenamePart(row.room_no || `tenant-${row.tenant_id}`);
   const name = sanitizeFilenamePart(row.tenant_name || `tenant-${row.tenant_id}`);
-  return `${splitId}-${room}-${name}.pdf`;
+  return `${batchId}-${room}-${name}.pdf`;
 }
 
-export function getBillPeriodLabel(bill: TenantBillPdfContext['bill']) {
-  return `${dayjs().month(bill.period_month - 1).format('MMMM')} ${bill.period_year}`;
-}
-
-export function getTenantBillNumber(split: TenantBillPdfContext['split'], row: TenantBillPdfContext['row']) {
+export function getManagementBillNumber(batch: ManagementBillPdfContext['batch'], row: ManagementTenantBillRow) {
   const room = String(row.room_no || row.tenant_id).replace(/\s+/g, '').toUpperCase();
-  return `BILL-${split.id}-${room}`;
+  return `MGMT-${batch.id}-${room}`;
 }
 
-export function getBillPayDate(readingDate: string) {
-  return dayjs(readingDate).add(10, 'day').format('DD MMM YYYY');
+export function getManagementBillFolderName(batch: ManagementBillPdfContext['batch']) {
+  return `Billify Management - ${String(batch.period_month).padStart(2, '0')}-${batch.period_year}`;
 }
 
-export function getTenantBillFolderName(bill: TenantBillPdfContext['bill']) {
-  return `Billify Bills - ${String(bill.period_month).padStart(2, '0')}-${bill.period_year}`;
+export function getManagementBillPeriodLabel(batch: ManagementBillPdfContext['batch']) {
+  return `${dayjs().month(batch.period_month - 1).format('MMMM')} ${batch.period_year}`;
 }
 
-export async function buildTenantBillPdfBytes(context: TenantBillPdfContext) {
-  const { settings, bill, split, row } = context;
-  const monthName = dayjs().month(bill.period_month - 1).format('MMMM');
-  const payDate = getBillPayDate(split.reading_date);
+export async function buildManagementBillPdfBytes(context: ManagementBillPdfContext) {
+  const { settings, batch, row } = context;
+  const monthName = dayjs().month(batch.period_month - 1).format('MMMM');
+  const issuedDate = dayjs(batch.created_at).format('DD MMM YYYY');
   const chunks: Uint8Array[] = [];
 
   return await new Promise<Uint8Array>((resolve, reject) => {
@@ -92,9 +70,6 @@ export async function buildTenantBillPdfBytes(context: TenantBillPdfContext) {
     const accentFill = '#111827';
 
     const formatMoney = (value: number) => `Rs ${value.toFixed(2)}`;
-    const formatNumber = (value: number) => value.toFixed(2);
-    const tenantFixedAmount = row.fixed_charge_calc + row.fixed_adjust;
-    const tenantFixedUnit = bill.fixed_unit_price > 0 ? tenantFixedAmount / bill.fixed_unit_price : 0;
 
     const drawBox = (x: number, y: number, width: number, height: number, fill = '#ffffff', stroke = borderColor) => {
       doc.rect(x, y, width, height).fillAndStroke(fill, stroke);
@@ -125,7 +100,7 @@ export async function buildTenantBillPdfBytes(context: TenantBillPdfContext) {
       .fillColor(darkText)
       .font('Helvetica-Bold')
       .fontSize(11)
-      .text(`ELECTRICITY BILL - ${monthName} ${bill.period_year}`, left + 14, y + 57, {
+      .text(`MANAGEMENT BILL - ${monthName} ${batch.period_year}`, left + 14, y + 57, {
         width: contentWidth - 28,
         align: 'center',
       });
@@ -135,9 +110,9 @@ export async function buildTenantBillPdfBytes(context: TenantBillPdfContext) {
     drawBox(left, y, metaWidth, 40, '#ffffff');
     drawBox(left + metaWidth, y, metaWidth, 40, '#ffffff');
     drawBox(left + metaWidth * 2, y, metaWidth, 40, '#ffffff');
-    drawLabelValue('Bill No', getTenantBillNumber(split, row), left + 10, y + 8, metaWidth - 20, 10);
-    drawLabelValue('Reading Date', dayjs(split.reading_date).format('DD MMM YYYY'), left + metaWidth + 10, y + 8, metaWidth - 20, 9);
-    drawLabelValue('Pay Date', payDate, left + metaWidth * 2 + 10, y + 8, metaWidth - 20, 9);
+    drawLabelValue('Bill No', getManagementBillNumber(batch, row), left + 10, y + 8, metaWidth - 20, 10);
+    drawLabelValue('Bill Date', issuedDate, left + metaWidth + 10, y + 8, metaWidth - 20, 9);
+    drawLabelValue('Period', getManagementBillPeriodLabel(batch), left + metaWidth * 2 + 10, y + 8, metaWidth - 20, 9);
 
     y += 52;
     const panelGap = 10;
@@ -152,11 +127,13 @@ export async function buildTenantBillPdfBytes(context: TenantBillPdfContext) {
       doc.text(`Phone: ${row.phone}`, left + 10, y + 56, { width: panelWidth - 20 });
     }
 
-    const meterX = left + panelWidth + panelGap;
-    doc.fillColor(darkText).font('Helvetica-Bold').fontSize(10).text('Meter Reading', meterX + 10, y + 10, { width: panelWidth - 20 });
-    doc.fillColor(mutedText).font('Helvetica').fontSize(8.5).text(`Previous: ${formatNumber(row.previous_reading)}`, meterX + 10, y + 29, { width: panelWidth - 20 });
-    doc.text(`Present: ${formatNumber(row.present_reading)}`, meterX + 10, y + 43, { width: panelWidth - 20 });
-    doc.fillColor(darkText).font('Helvetica-Bold').fontSize(8.5).text(`Consumed: ${formatNumber(row.consumed_unit)} units`, meterX + 10, y + 57, {
+    const statusX = left + panelWidth + panelGap;
+    doc.fillColor(darkText).font('Helvetica-Bold').fontSize(10).text('Bill Period', statusX + 10, y + 10, { width: panelWidth - 20 });
+    doc.fillColor(mutedText).font('Helvetica').fontSize(8.5).text(`Period: ${getManagementBillPeriodLabel(batch)}`, statusX + 10, y + 29, {
+      width: panelWidth - 20,
+    });
+    doc.text(`Issued: ${issuedDate}`, statusX + 10, y + 43, { width: panelWidth - 20 });
+    doc.fillColor(darkText).font('Helvetica-Bold').fontSize(8.5).text(`Status: ${row.payment_status.toUpperCase()}`, statusX + 10, y + 57, {
       width: panelWidth - 20,
     });
 
@@ -170,7 +147,14 @@ export async function buildTenantBillPdfBytes(context: TenantBillPdfContext) {
     const rowHeight = 25;
     const headerHeight = 24;
 
-    const drawTableCell = (text: string, x: number, cellY: number, width: number, height: number, options: { bold?: boolean; align?: 'left' | 'right'; fill?: string; color?: string } = {}) => {
+    const drawTableCell = (
+      text: string,
+      x: number,
+      cellY: number,
+      width: number,
+      height: number,
+      options: { bold?: boolean; align?: 'left' | 'right'; fill?: string; color?: string } = {},
+    ) => {
       doc.rect(x, cellY, width, height).fillAndStroke(options.fill ?? '#ffffff', softBorder);
       doc
         .fillColor(options.color ?? darkText)
@@ -185,13 +169,9 @@ export async function buildTenantBillPdfBytes(context: TenantBillPdfContext) {
     y += headerHeight;
 
     const chargeRows: Array<[string, string, number, boolean?]> = [
-      ['Fixed Charge', `${formatNumber(tenantFixedUnit)} x ${formatNumber(bill.fixed_unit_price)}`, tenantFixedAmount],
-      ['Energy Charge', `${formatNumber(row.consumed_unit)} x ${formatNumber(bill.energy_unit_price)}`, row.energy_charge],
-      ['Extra Charge', '', row.extra_charge_calc + row.extra_adjust],
-      ['Tax', `${formatNumber(bill.tax_percent)}%`, row.tax],
-      ['Sub Total', '', row.sub_total, true],
-      ['Interest Charge', '', row.interest_charge_calc + row.interest_adjust],
-      ['Other Charge', '', row.other_charge ?? row.other_charge_calc + (row.other_adjust ?? 0)],
+      ['Maintenance Fees', '', row.maintenance_fees],
+      ['Generator Fees', '', row.generator_fees],
+      ['Total', '', row.total, true],
     ];
 
     for (const [label, calculation, amount, bold] of chargeRows) {
@@ -211,7 +191,7 @@ export async function buildTenantBillPdfBytes(context: TenantBillPdfContext) {
     doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(12).text('AMOUNT PAYABLE', left + 14, y + 15, {
       width: contentWidth / 2,
     });
-    doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(16).text(formatMoney(row.payable), left + contentWidth / 2, y + 13, {
+    doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(16).text(formatMoney(row.total), left + contentWidth / 2, y + 13, {
       width: contentWidth / 2 - 14,
       align: 'right',
     });

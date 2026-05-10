@@ -6,7 +6,10 @@ const defaults: AppSettings = {
   company_address: '',
   whatsapp_phone_number_id: '',
   whatsapp_access_token: '',
-  whatsapp_template_name: 'electricity_bill',
+  whatsapp_electricity_bill_template: 'electricity_bill',
+  whatsapp_electricity_reminder_template: 'electricity_reminder',
+  whatsapp_management_bill_template: 'management_bill',
+  whatsapp_management_reminder_template: 'management_reminder',
   whatsapp_template_language: 'en',
 };
 

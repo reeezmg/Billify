@@ -14,6 +14,8 @@ export default function Tenants() {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [presentReading, setPresentReading] = useState('0.00');
+  const [maintenanceFees, setMaintenanceFees] = useState('0.00');
+  const [generatorFees, setGeneratorFees] = useState('0.00');
   const [active, setActive] = useState('1');
   const navigate = useNavigate();
 
@@ -27,6 +29,8 @@ export default function Tenants() {
     setName('');
     setPhone('');
     setPresentReading('0.00');
+    setMaintenanceFees('0.00');
+    setGeneratorFees('0.00');
     setActive('1');
   };
 
@@ -41,6 +45,8 @@ export default function Tenants() {
     setName(tenant.name);
     setPhone(tenant.phone ?? '');
     setPresentReading((tenant.present_reading ?? 0).toFixed(2));
+    setMaintenanceFees((tenant.maintenance_fees ?? 0).toFixed(2));
+    setGeneratorFees((tenant.generator_fees ?? 0).toFixed(2));
     setActive(String(tenant.active ?? 1));
     setIsAddOpen(true);
   };
@@ -61,7 +67,7 @@ export default function Tenants() {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-3xl font-semibold text-white">Tenants</h1>
-          <p className="mt-2 text-slate-400">Manage rooms, names, phone numbers, and starting meter readings.</p>
+          <p className="mt-2 text-slate-400">Manage rooms, names, phone numbers, meter readings, and recurring fees.</p>
         </div>
         <button
           className="rounded-xl bg-brand-500 px-4 py-2 text-white transition hover:bg-brand-400"
@@ -77,7 +83,7 @@ export default function Tenants() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-2xl font-semibold text-white">{editingTenantId ? 'Edit tenant' : 'Add tenant'}</h2>
-                <p className="mt-1 text-sm text-slate-400">Enter the tenant details and their current meter reading.</p>
+                <p className="mt-1 text-sm text-slate-400">Enter the tenant details, current meter reading, and monthly fee amounts.</p>
               </div>
               <button
                 className="rounded-lg px-2 py-1 text-slate-400 transition hover:bg-white/5 hover:text-white"
@@ -101,6 +107,8 @@ export default function Tenants() {
                   name: name.trim(),
                   phone: phone.trim() || null,
                   present_reading: Number(presentReading || 0),
+                  maintenance_fees: Number(maintenanceFees || 0),
+                  generator_fees: Number(generatorFees || 0),
                   active: Number(active),
                 });
                 setIsAddOpen(false);
@@ -155,6 +163,32 @@ export default function Tenants() {
                   />
                 </label>
                 <label className="space-y-2 text-sm">
+                  <span className="text-slate-300">Maintenance fees</span>
+                  <input
+                    className="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-white outline-none ring-0 transition focus:border-brand-400"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={maintenanceFees}
+                    onChange={(e) => setMaintenanceFees(e.target.value)}
+                    placeholder="0"
+                    onFocus={focusSelectAll}
+                  />
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-300">Generator fees</span>
+                  <input
+                    className="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-white outline-none ring-0 transition focus:border-brand-400"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={generatorFees}
+                    onChange={(e) => setGeneratorFees(e.target.value)}
+                    placeholder="0"
+                    onFocus={focusSelectAll}
+                  />
+                </label>
+                <label className="space-y-2 text-sm">
                   <span className="text-slate-300">Status</span>
                   <select
                     className="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-white outline-none ring-0 transition focus:border-brand-400"
@@ -198,6 +232,8 @@ export default function Tenants() {
               <th className="px-4 py-3">Name</th>
               <th className="px-4 py-3">Phone</th>
               <th className="px-4 py-3">Present reading</th>
+              <th className="px-4 py-3">Maintenance fees</th>
+              <th className="px-4 py-3">Generator fees</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Actions</th>
             </tr>
@@ -209,6 +245,8 @@ export default function Tenants() {
                 <td className="px-4 py-3">{tenant.name}</td>
                 <td className="px-4 py-3">{tenant.phone ?? '-'}</td>
                 <td className="px-4 py-3">{tenant.present_reading.toFixed(2)}</td>
+                <td className="px-4 py-3">{tenant.maintenance_fees.toFixed(2)}</td>
+                <td className="px-4 py-3">{tenant.generator_fees.toFixed(2)}</td>
                 <td className="px-4 py-3">{tenant.active ? 'Active' : 'Inactive'}</td>
                 <td className="px-4 py-3">
                   <div className="flex flex-wrap gap-2">

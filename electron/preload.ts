@@ -1,5 +1,18 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { AppSettings, Bill, BillSplit, PaymentMethod, PaymentStatus, SessionUser, Tenant, TenantBillHistory } from '../src/types';
+import type {
+  AppSettings,
+  Bill,
+  BillSplit,
+  ManagementBatchDetail,
+  ManagementBatchSummary,
+  ManagementTenantBillRow,
+  PaymentLedgerEntry,
+  PaymentMethod,
+  PaymentStatus,
+  SessionUser,
+  Tenant,
+  TenantBillHistory,
+} from '../src/types';
 
 const api = {
   auth: {
@@ -14,12 +27,29 @@ const api = {
     save: (tenant: Partial<Tenant>) => ipcRenderer.invoke('tenants:save', tenant),
     delete: (tenantId: number) => ipcRenderer.invoke('tenants:delete', tenantId),
     getBills: (tenantId: number) => ipcRenderer.invoke('tenants:getBills', tenantId) as Promise<TenantBillHistory>,
+    getManagementBills: (tenantId: number) =>
+      ipcRenderer.invoke('tenants:getManagementBills', tenantId) as Promise<ManagementTenantBillRow[]>,
     updateBillPayment: (
       tenantBillId: number,
       paymentStatus: PaymentStatus,
       paymentMethod: PaymentMethod | null,
       paymentDate: string | null,
     ) => ipcRenderer.invoke('tenants:updateBillPayment', tenantBillId, paymentStatus, paymentMethod, paymentDate),
+  },
+  management: {
+    listBatches: () => ipcRenderer.invoke('management:listBatches') as Promise<ManagementBatchSummary[]>,
+    createBatch: (period: { period_month: number; period_year: number }) => ipcRenderer.invoke('management:createBatch', period),
+    getBatch: (batchId: number) => ipcRenderer.invoke('management:getBatch', batchId) as Promise<ManagementBatchDetail | null>,
+    rescanBatch: (batchId: number) => ipcRenderer.invoke('management:rescanBatch', batchId),
+    updateBillPayment: (
+      id: number,
+      paymentStatus: PaymentStatus,
+      paymentMethod: PaymentMethod | null,
+      paymentDate: string | null,
+    ) => ipcRenderer.invoke('management:updateBillPayment', id, paymentStatus, paymentMethod, paymentDate),
+    downloadAll: (batchId: number) => ipcRenderer.invoke('management:downloadAll', batchId),
+    sendAll: (batchId: number) => ipcRenderer.invoke('management:sendAll', batchId),
+    sendReminder: (managementBillId: number) => ipcRenderer.invoke('management:sendReminder', managementBillId),
   },
   bills: {
     list: () => ipcRenderer.invoke('bills:list') as Promise<Bill[]>,
@@ -40,6 +70,9 @@ const api = {
     save: (user: any) => ipcRenderer.invoke('users:save', user),
     delete: (userId: number) => ipcRenderer.invoke('users:delete', userId),
     resetPassword: (userId: number, password: string) => ipcRenderer.invoke('users:resetPassword', userId, password),
+  },
+  payments: {
+    list: () => ipcRenderer.invoke('payments:list') as Promise<PaymentLedgerEntry[]>,
   },
   whatsapp: {
     previewPdf: (splitId: number, tenantBillId: number) => ipcRenderer.invoke('whatsapp:previewPdf', splitId, tenantBillId) as Promise<string>,

@@ -2,6 +2,7 @@ import { execute, queryAll, queryOne } from '../db/client';
 import type {
   PaymentMethod,
   PaymentStatus,
+  ManagementTenantBillRow,
   Tenant,
   TenantBillHistoryRecord,
   TenantBillHistoryPayload,
@@ -26,17 +27,21 @@ export async function upsertTenant(tenant: Partial<Tenant>) {
       phone: tenant.phone === undefined ? existing.phone : tenant.phone,
       email: tenant.email === undefined ? existing.email : tenant.email,
       present_reading: tenant.present_reading ?? existing.present_reading,
+      maintenance_fees: tenant.maintenance_fees ?? existing.maintenance_fees,
+      generator_fees: tenant.generator_fees ?? existing.generator_fees,
       active: tenant.active ?? existing.active,
     };
 
     await execute(
-      'UPDATE tenants SET room_no = ?, name = ?, phone = ?, email = ?, present_reading = ?, active = ?, updated_at = datetime(\'now\') WHERE id = ?',
+      'UPDATE tenants SET room_no = ?, name = ?, phone = ?, email = ?, present_reading = ?, maintenance_fees = ?, generator_fees = ?, active = ?, updated_at = datetime(\'now\') WHERE id = ?',
       [
         nextTenant.room_no,
         nextTenant.name,
         nextTenant.phone ?? null,
         nextTenant.email ?? null,
         nextTenant.present_reading ?? 0,
+        nextTenant.maintenance_fees ?? 0,
+        nextTenant.generator_fees ?? 0,
         nextTenant.active ?? 1,
         tenant.id,
       ],
@@ -45,8 +50,17 @@ export async function upsertTenant(tenant: Partial<Tenant>) {
   }
 
   const result = await execute(
-    'INSERT INTO tenants (room_no, name, phone, email, present_reading, active) VALUES (?, ?, ?, ?, ?, ?)',
-    [tenant.room_no, tenant.name, tenant.phone ?? null, tenant.email ?? null, tenant.present_reading ?? 0, tenant.active ?? 1],
+    'INSERT INTO tenants (room_no, name, phone, email, present_reading, maintenance_fees, generator_fees, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [
+      tenant.room_no,
+      tenant.name,
+      tenant.phone ?? null,
+      tenant.email ?? null,
+      tenant.present_reading ?? 0,
+      tenant.maintenance_fees ?? 0,
+      tenant.generator_fees ?? 0,
+      tenant.active ?? 1,
+    ],
   );
   return result.lastID;
 }
@@ -88,6 +102,24 @@ export async function getTenantBillHistory(tenantId: number): Promise<TenantBill
   );
 
   return { tenant: tenant ?? null, bills };
+}
+
+export async function getTenantManagementBills(tenantId: number) {
+  return queryAll<ManagementTenantBillRow>(
+    `SELECT
+        mb.*,
+        t.name AS tenant_name,
+        t.room_no,
+        t.phone,
+        b.period_month,
+        b.period_year
+     FROM management_tenant_bills mb
+     INNER JOIN management_bill_batches b ON b.id = mb.batch_id
+     INNER JOIN tenants t ON t.id = mb.tenant_id
+     WHERE mb.tenant_id = ?
+     ORDER BY b.period_year DESC, b.period_month DESC, b.id DESC`,
+    [tenantId],
+  );
 }
 
 export async function updateTenantBillPayment(

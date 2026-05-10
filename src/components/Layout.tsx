@@ -11,11 +11,15 @@ type Props = {
 export default function Layout({ session, onSessionChange, children }: Props) {
   const location = useLocation();
   const navigate = useNavigate();
+  const isLinkActive = (to: string) =>
+    to === '/' ? location.pathname === '/' : location.pathname === to || Boolean(matchPath({ path: `${to}/*`, end: false }, location.pathname));
 
   const links = [
     { to: '/', label: 'Dashboard' },
     { to: '/tenants', label: 'Tenants' },
     { to: '/bills', label: 'Bills' },
+    { to: '/management', label: 'Management' },
+    { to: '/payments', label: 'Payments' },
     ...(session?.role === 'admin' ? [{ to: '/users', label: 'Users' }, { to: '/settings', label: 'Settings' }] : []),
   ];
 
@@ -29,12 +33,24 @@ export default function Layout({ session, onSessionChange, children }: Props) {
       items.push({ label: 'Bills', to: '/bills' }, { label: 'Bill split' });
       return items;
     }
+    if (matchPath('/management/:batchId', location.pathname)) {
+      items.push({ label: 'Management', to: '/management' }, { label: 'Management batch' });
+      return items;
+    }
     if (location.pathname === '/tenants') {
       items.push({ label: 'Tenants' });
       return items;
     }
     if (location.pathname === '/bills') {
       items.push({ label: 'Bills' });
+      return items;
+    }
+    if (location.pathname === '/management') {
+      items.push({ label: 'Management' });
+      return items;
+    }
+    if (location.pathname === '/payments') {
+      items.push({ label: 'Payments' });
       return items;
     }
     if (location.pathname === '/users') {
@@ -61,7 +77,9 @@ export default function Layout({ session, onSessionChange, children }: Props) {
               key={link.to}
               to={link.to}
               className={`block rounded-lg px-2.5 py-2 text-sm transition ${
-                location.pathname === link.to ? 'bg-brand-500/20 text-brand-100 ring-1 ring-brand-400/30' : 'text-slate-300 hover:bg-white/5'
+                isLinkActive(link.to)
+                  ? 'bg-brand-500/20 text-brand-100 ring-1 ring-brand-400/30'
+                  : 'text-slate-300 hover:bg-white/5'
               }`}
             >
               {link.label}

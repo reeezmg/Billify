@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls \"C:/Users/User/.claude/plans\" 2>/dev/null || echo MISSING)",
+      "Read(//c/Users/User/.claude/plans/**)"
+    ]
+  }
+}

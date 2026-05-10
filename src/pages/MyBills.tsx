@@ -1,6 +1,7 @@
 import { useEffect, useState, type FocusEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Bill } from '../types';
+import { monthOptions } from '../lib/monthOptions';
 
 type BillFormState = {
   period_month: number;
@@ -28,21 +29,6 @@ const createInitialForm = (): BillFormState => ({
   tax_percent: '0.00',
 });
 
-const monthOptions = [
-  { value: 1, label: 'JAN' },
-  { value: 2, label: 'FEB' },
-  { value: 3, label: 'MAR' },
-  { value: 4, label: 'APR' },
-  { value: 5, label: 'MAY' },
-  { value: 6, label: 'JUN' },
-  { value: 7, label: 'JUL' },
-  { value: 8, label: 'AUG' },
-  { value: 9, label: 'SEP' },
-  { value: 10, label: 'OCT' },
-  { value: 11, label: 'NOV' },
-  { value: 12, label: 'DEC' },
-];
-
 const focusSelectAll = (event: FocusEvent<HTMLInputElement>) => {
   event.currentTarget.select();
 };
@@ -57,6 +43,7 @@ export default function MyBills() {
   const [isBillModalOpen, setIsBillModalOpen] = useState(false);
   const [editingBillId, setEditingBillId] = useState<number | null>(null);
   const [form, setForm] = useState<BillFormState>(createInitialForm());
+  const [formError, setFormError] = useState('');
   const navigate = useNavigate();
 
   const fixedUnit = parseDecimal(form.fixed_unit);
@@ -86,6 +73,7 @@ export default function MyBills() {
   const resetForm = () => {
     setEditingBillId(null);
     setForm(createInitialForm());
+    setFormError('');
   };
 
   const openAddModal = () => {
@@ -155,28 +143,39 @@ export default function MyBills() {
               className="mt-6 space-y-6"
               onSubmit={async (event) => {
                 event.preventDefault();
-                await window.api.bills.save({
-                  id: editingBillId ?? undefined,
-                  period_month: form.period_month,
-                  period_year: Number(form.period_year),
-                  fixed_unit: fixedUnit,
-                  fixed_unit_price: fixedUnitPrice,
-                  fixed_charge: liveFixed,
-                  energy_unit: energyUnit,
-                  energy_unit_price: energyUnitPrice,
-                  energy_charge: liveEnergy,
-                  extra_charge: extraCharge,
-                  interest_charge: interestCharge,
-                  other_charge: otherCharge,
-                  tax_percent: taxPercent,
-                  tax: liveTax,
-                  total: liveTotal,
-                });
-                setIsBillModalOpen(false);
-                resetForm();
-                refresh();
+                setFormError('');
+                try {
+                  await window.api.bills.save({
+                    id: editingBillId ?? undefined,
+                    period_month: form.period_month,
+                    period_year: Number(form.period_year),
+                    fixed_unit: fixedUnit,
+                    fixed_unit_price: fixedUnitPrice,
+                    fixed_charge: liveFixed,
+                    energy_unit: energyUnit,
+                    energy_unit_price: energyUnitPrice,
+                    energy_charge: liveEnergy,
+                    extra_charge: extraCharge,
+                    interest_charge: interestCharge,
+                    other_charge: otherCharge,
+                    tax_percent: taxPercent,
+                    tax: liveTax,
+                    total: liveTotal,
+                  });
+                  setIsBillModalOpen(false);
+                  resetForm();
+                  refresh();
+                } catch (error: any) {
+                  setFormError(error?.message ?? 'Could not save this bill. Please try again.');
+                }
               }}
             >
+              {formError ? (
+                <div className="rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+                  {formError}
+                </div>
+              ) : null}
+
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="space-y-2 text-sm text-slate-300">
                   <div>Period month</div>
@@ -337,6 +336,8 @@ export default function MyBills() {
             <tr>
               <th className="px-4 py-3">Period</th>
               <th className="px-4 py-3">Total</th>
+              <th className="px-4 py-3">Tenants</th>
+              <th className="px-4 py-3">Pending</th>
               <th className="px-4 py-3">Split status</th>
               <th className="px-4 py-3">Actions</th>
             </tr>
@@ -348,6 +349,8 @@ export default function MyBills() {
                   {bill.period_month}/{bill.period_year}
                 </td>
                 <td className="px-4 py-3">Rs {bill.total.toFixed(2)}</td>
+                <td className="px-4 py-3">{bill.tenant_count ?? 0}</td>
+                <td className="px-4 py-3">{bill.pending_count ?? 0}</td>
                 <td className="px-4 py-3">
                   <span
                     className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${

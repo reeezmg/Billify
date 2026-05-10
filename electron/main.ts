@@ -8,6 +8,9 @@ import { registerBillsIpc } from './ipc/bills.ipc';
 import { registerSplitsIpc } from './ipc/splits.ipc';
 import { registerUsersIpc } from './ipc/users.ipc';
 import { registerSettingsIpc } from './ipc/settings.ipc';
+import { registerManagementIpc } from './ipc/management.ipc';
+import { registerPaymentsIpc } from './ipc/payments.ipc';
+import { registerWhatsappIpc } from './ipc/whatsapp.ipc';
 
 let mainWindow: BrowserWindow | null = null;
 let updateWindow: BrowserWindow | null = null;
@@ -451,6 +454,9 @@ app.whenReady().then(async () => {
   registerSplitsIpc();
   registerUsersIpc();
   registerSettingsIpc();
+  registerManagementIpc();
+  registerPaymentsIpc();
+  registerWhatsappIpc();
   if (app.isPackaged && process.platform === 'win32') {
     await startBlockingUpdateFlow();
     return;

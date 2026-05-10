@@ -28,7 +28,8 @@ export async function uploadWhatsAppMedia(params: {
   fileName: string;
 }) {
   const form = new FormData();
-  form.append('file', new Blob([params.fileBytes], { type: 'application/pdf' }), params.fileName);
+  const fileBuffer = params.fileBytes.buffer.slice(params.fileBytes.byteOffset, params.fileBytes.byteOffset + params.fileBytes.byteLength) as ArrayBuffer;
+  form.append('file', new Blob([fileBuffer], { type: 'application/pdf' }), params.fileName);
   form.append('type', 'application/pdf');
   form.append('messaging_product', 'whatsapp');
 
@@ -53,12 +54,7 @@ export async function sendWhatsAppTemplateWithMedia(params: {
   templateName: string;
   language: string;
   to: string;
-  tenantName: string;
-  period: string;
-  billNumber: string;
-  room: string;
-  amount: string;
-  payDate: string;
+  bodyParams: string[];
   mediaId: string;
 }) {
   const response = await fetch(`https://graph.facebook.com/v21.0/${params.phoneNumberId}/messages`, {
@@ -86,14 +82,46 @@ export async function sendWhatsAppTemplateWithMedia(params: {
           },
           {
             type: 'body',
-            parameters: [
-              { type: 'text', text: params.tenantName },
-              { type: 'text', text: params.period },
-              { type: 'text', text: params.billNumber },
-              { type: 'text', text: params.room },
-              { type: 'text', text: params.amount },
-              { type: 'text', text: params.payDate },
-            ],
+            parameters: params.bodyParams.map((text) => ({ type: 'text', text })),
+          },
+        ],
+      },
+    }),
+  });
+
+  const payload = await readJsonResponse<WhatsAppSendResponse>(response);
+  const messageId = payload.messages?.[0]?.id ?? '';
+  if (!messageId) {
+    throw new Error('WhatsApp message send did not return a message id');
+  }
+  return { messageId };
+}
+
+export async function sendWhatsAppReminderTemplate(params: {
+  phoneNumberId: string;
+  accessToken: string;
+  templateName: string;
+  language: string;
+  to: string;
+  bodyParams: string[];
+}) {
+  const response = await fetch(`https://graph.facebook.com/v21.0/${params.phoneNumberId}/messages`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${params.accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      to: params.to,
+      type: 'template',
+      template: {
+        name: params.templateName,
+        language: { code: params.language },
+        components: [
+          {
+            type: 'body',
+            parameters: params.bodyParams.map((text) => ({ type: 'text', text })),
           },
         ],
       },

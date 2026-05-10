@@ -70,6 +70,8 @@ That shim stores its own data in `localStorage`, so it is separate from the Elec
    - tenants
    - bills
    - splits
+   - management
+   - payments
    - users
    - settings
    - WhatsApp
@@ -90,6 +92,9 @@ It loads the session through `window.api.auth.getSession()` and renders:
 - `/tenants`
 - `/bills`
 - `/bills/:billId/split`
+- `/management`
+- `/management/:batchId`
+- `/payments`
 - `/users`
 - `/settings`
 
@@ -112,9 +117,12 @@ It conditionally shows admin links when `session.role === 'admin'`.
 - `src/pages/SetupPassword.tsx`: force password change for first-time users
 - `src/pages/Dashboard.tsx`: informative landing page with live billing metrics, payment progress, payment methods, recent bills, top consumers, and tenant payment attention cards in a compact overview layout
 - `src/pages/Tenants.tsx`: create, edit, list tenants, and open tenant bill history
-- `src/pages/TenantBills.tsx`: show one tenant's bill history, payment summary, badges, reminder actions, payment updates, and payment dates
+- `src/pages/TenantBills.tsx`: show one tenant's electricity and management bill history with tabs, combined payment summary, reminder actions, payment updates, and payment dates
 - `src/pages/MyBills.tsx`: create and edit monthly bills in a modal, list bills with split status, then navigate to splits
-- `src/pages/BillSplit.tsx`: enter readings, adjust split values, save drafts or finalize splits, and sync tenant present readings
+- `src/pages/BillSplit.tsx`: enter readings, adjust split values, save drafts or finalize splits, show finalized tenant bill status/actions, download tenant PDFs into a bill-period subfolder, send them through WhatsApp, and sync tenant present readings
+- `src/pages/Management.tsx`: create management billing batches, rescan tenant fees into existing batches, download batch PDFs, send batch WhatsApp messages, and open batch details
+- `src/pages/ManagementBatch.tsx`: review one management batch, update payments, and send reminders
+- `src/pages/Payments.tsx`: unified ledger of paid electricity and management bills
 - `src/pages/Users.tsx`: admin user management with add/edit/delete modal actions
 - `src/pages/Settings.tsx`: company and WhatsApp configuration
 
@@ -129,6 +137,8 @@ The preload contract in `electron/preload.ts` mirrors the main process handlers:
 - `tenants`
 - `bills`
 - `splits`
+- `management`
+- `payments`
 - `users`
 - `whatsapp`
 - `settings`
@@ -159,6 +169,8 @@ Important fields:
 - `phone`
 - `email`
 - `present_reading`
+- `maintenance_fees`
+- `generator_fees`
 - `active`
 
 ### `bills`
@@ -209,6 +221,30 @@ There is a uniqueness constraint on `(bill_split_id, tenant_id)`.
 `payment_status` defaults to `pending`, and `payment_method` is only meaningful when the bill is marked `paid`.
 `payment_date` is only meaningful when the bill is marked `paid`.
 
+### `management_bill_batches`
+
+Stores management billing batches keyed by month and year.
+
+Important fields:
+
+- `period_month`
+- `period_year`
+- `status`
+
+### `management_tenant_bills`
+
+Stores per-tenant management fee rows for each batch.
+
+Important fields:
+
+- `maintenance_fees`
+- `generator_fees`
+- `total`
+- `payment_status`
+- `payment_method`
+- `payment_date`
+- `whatsapp_sent_at`
+
 ### `app_config`
 
 Stores key/value app settings used by the settings page and WhatsApp flow.
@@ -230,10 +266,13 @@ It verifies passwords with bcryptjs and returns a renderer-safe session object.
 
 ### Bills and splits
 
-`electron/services/bill.service.ts`, `electron/services/tenant.service.ts`, and `electron/services/split.service.ts` implement the core business operations.
+`electron/services/bill.service.ts`, `electron/services/tenant.service.ts`, `electron/services/split.service.ts`, `electron/services/management.service.ts`, `electron/services/payments.service.ts`, and `electron/services/pdf.service.ts` implement the core business operations.
 
 `electron/services/bill.service.ts` stores bill totals, tax percentage, other charges, and joins `bill_splits` when listing bills for the status column.
-`electron/services/tenant.service.ts` also provides tenant bill history lookups and payment updates for the tenant detail page.
+`electron/services/tenant.service.ts` provides tenant bill history lookups, management bill lookups, and payment updates for the tenant detail page.
+`electron/services/management.service.ts` manages management batch creation, listing, and payment updates.
+`electron/services/payments.service.ts` returns the unified paid ledger for the payments page.
+`electron/services/pdf.service.ts` exports tenant and management bill PDFs into bill-period-named subfolders inside the folder selected by the user.
 
 The split flow is:
 
@@ -272,7 +311,7 @@ The main process uses the same logic before persisting draft rows.
 
 `src/lib/browserApi.ts` mirrors the desktop data flow for Chrome testing.
 It now assigns deterministic tenant-bill row IDs from the split ID and tenant ID so payment updates can target the correct row even when the browser state has been rebuilt from storage.
-It also preserves tenant `present_reading` values and split payment state when splits are recalculated or updated.
+It also preserves tenant `present_reading` values, management batch rows, and split payment state when records are recalculated or updated, and it writes downloaded PDFs into the same bill-period-named subfolder shape as the desktop exporter.
 
 ## Settings and External Integration
 
@@ -281,7 +320,10 @@ Those settings feed the WhatsApp sender:
 
 - `whatsapp_phone_number_id`
 - `whatsapp_access_token`
-- `whatsapp_template_name`
+- `whatsapp_electricity_bill_template`
+- `whatsapp_electricity_reminder_template`
+- `whatsapp_management_bill_template`
+- `whatsapp_management_reminder_template`
 - `whatsapp_template_language`
 
 ## Development Commands

@@ -57,8 +57,8 @@ export function registerSplitsIpc() {
         `INSERT INTO tenant_bills
           (bill_split_id, tenant_id, previous_reading, present_reading, consumed_unit, fixed_charge_calc, fixed_adjust,
            energy_charge, extra_charge_calc, extra_adjust, tax, sub_total, interest_charge_calc, interest_adjust,
-           other_charge_calc, payment_status, payment_method, payment_date, payable)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           other_charge_calc, other_adjust, payment_status, payment_method, payment_date, payable)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       for (const calc of calculated.rows) {
         const row = payload.rows.find((item: any) => item.tenant_id === calc.tenant_id);
@@ -79,6 +79,7 @@ export function registerSplitsIpc() {
           calc.interest_charge_calc,
           row?.interest_adjust ?? 0,
           calc.other_charge_calc,
+          row?.other_adjust ?? 0,
           payment?.payment_status ?? 'pending',
           payment?.payment_method ?? null,
           payment?.payment_date ?? null,

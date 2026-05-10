@@ -12,13 +12,9 @@ export async function sendTemplateWithMedia(params: {
   templateName: string;
   language: string;
   to: string;
-  tenantName: string;
-  period: string;
-  billNumber: string;
-  room: string;
-  amount: string;
-  payDate: string;
+  bodyParams: string[];
   mediaId: string;
+  mediaFileName?: string;
 }) {
   const client = axios.create({
     baseURL: 'https://graph.facebook.com/v21.0',
@@ -46,14 +42,42 @@ export async function sendTemplateWithMedia(params: {
         },
         {
           type: 'body',
-          parameters: [
-            { type: 'text', text: params.tenantName },
-            { type: 'text', text: params.period },
-            { type: 'text', text: params.billNumber },
-            { type: 'text', text: params.room },
-            { type: 'text', text: params.amount },
-            { type: 'text', text: params.payDate },
-          ],
+          parameters: params.bodyParams.map((text) => ({ type: 'text', text })),
+        },
+      ],
+    },
+  });
+
+  const messageId = response.data?.messages?.[0]?.id ?? '';
+  return { messageId };
+}
+
+export async function sendReminderTemplate(params: {
+  phoneNumberId: string;
+  accessToken: string;
+  templateName: string;
+  language: string;
+  to: string;
+  bodyParams: string[];
+}) {
+  const client = axios.create({
+    baseURL: 'https://graph.facebook.com/v21.0',
+    headers: {
+      Authorization: `Bearer ${params.accessToken}`,
+    },
+  });
+
+  const response = await client.post(`/${params.phoneNumberId}/messages`, {
+    messaging_product: 'whatsapp',
+    to: params.to,
+    type: 'template',
+    template: {
+      name: params.templateName,
+      language: { code: params.language },
+      components: [
+        {
+          type: 'body',
+          parameters: params.bodyParams.map((text) => ({ type: 'text', text })),
         },
       ],
     },

@@ -58,6 +58,18 @@ async function createDb() {
   database.run(fs.readFileSync(migrationPath, 'utf8'));
 
   const schemaChanged = ensureColumn(database, 'tenants', 'present_reading', 'present_reading REAL NOT NULL DEFAULT 0');
+  const tenantMaintenanceFeesChanged = ensureColumn(
+    database,
+    'tenants',
+    'maintenance_fees',
+    'maintenance_fees REAL NOT NULL DEFAULT 0',
+  );
+  const tenantGeneratorFeesChanged = ensureColumn(
+    database,
+    'tenants',
+    'generator_fees',
+    'generator_fees REAL NOT NULL DEFAULT 0',
+  );
   const billTaxPercentChanged = ensureColumn(database, 'bills', 'tax_percent', 'tax_percent REAL NOT NULL DEFAULT 0');
   const billOtherChargeChanged = ensureColumn(database, 'bills', 'other_charge', 'other_charge REAL NOT NULL DEFAULT 0');
   const tenantBillOtherChargeChanged = ensureColumn(
@@ -65,6 +77,18 @@ async function createDb() {
     'tenant_bills',
     'other_charge_calc',
     'other_charge_calc REAL NOT NULL DEFAULT 0',
+  );
+  const tenantBillEnergyAdjustChanged = ensureColumn(
+    database,
+    'tenant_bills',
+    'energy_adjust',
+    'energy_adjust REAL NOT NULL DEFAULT 0',
+  );
+  const tenantBillOtherAdjustChanged = ensureColumn(
+    database,
+    'tenant_bills',
+    'other_adjust',
+    'other_adjust REAL NOT NULL DEFAULT 0',
   );
   const tenantBillPaymentStatusChanged = ensureColumn(
     database,
@@ -84,6 +108,18 @@ async function createDb() {
     'payment_date',
     'payment_date TEXT',
   );
+  const configRenameApplied = (() => {
+    database.run(`
+      INSERT OR IGNORE INTO app_config (key, value)
+      SELECT 'whatsapp_electricity_bill_template', value
+      FROM app_config
+      WHERE key = 'whatsapp_template_name'
+    `);
+    const inserted = database.getRowsModified() > 0;
+    database.run(`DELETE FROM app_config WHERE key = 'whatsapp_template_name'`);
+    const deleted = database.getRowsModified() > 0;
+    return inserted || deleted;
+  })();
 
   const seedRow = database.prepare('SELECT id FROM users WHERE email = ?').getAsObject(['admin@local']) as { id?: number };
   if (!seedRow.id) {
@@ -95,12 +131,17 @@ async function createDb() {
     persist(database);
   } else if (
     schemaChanged ||
+    tenantMaintenanceFeesChanged ||
+    tenantGeneratorFeesChanged ||
     billTaxPercentChanged ||
     billOtherChargeChanged ||
     tenantBillOtherChargeChanged ||
+    tenantBillEnergyAdjustChanged ||
+    tenantBillOtherAdjustChanged ||
     tenantBillPaymentStatusChanged ||
     tenantBillPaymentMethodChanged ||
-    tenantBillPaymentDateChanged
+    tenantBillPaymentDateChanged ||
+    configRenameApplied
   ) {
     persist(database);
   }

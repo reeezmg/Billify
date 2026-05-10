@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS tenants (
   phone TEXT,
   email TEXT,
   present_reading REAL NOT NULL DEFAULT 0,
+  maintenance_fees REAL NOT NULL DEFAULT 0,
+  generator_fees REAL NOT NULL DEFAULT 0,
   active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -60,6 +62,7 @@ CREATE TABLE IF NOT EXISTS tenant_bills (
   fixed_charge_calc REAL NOT NULL,
   fixed_adjust REAL NOT NULL DEFAULT 0,
   energy_charge REAL NOT NULL,
+  energy_adjust REAL NOT NULL DEFAULT 0,
   extra_charge_calc REAL NOT NULL,
   extra_adjust REAL NOT NULL DEFAULT 0,
   tax REAL NOT NULL,
@@ -67,6 +70,7 @@ CREATE TABLE IF NOT EXISTS tenant_bills (
   interest_charge_calc REAL NOT NULL,
   interest_adjust REAL NOT NULL DEFAULT 0,
   other_charge_calc REAL NOT NULL DEFAULT 0,
+  other_adjust REAL NOT NULL DEFAULT 0,
   payment_status TEXT NOT NULL DEFAULT 'pending' CHECK(payment_status IN ('pending', 'paid')),
   payment_method TEXT CHECK(payment_method IN ('cash', 'upi', 'card')),
   payment_date TEXT,
@@ -75,6 +79,32 @@ CREATE TABLE IF NOT EXISTS tenant_bills (
   whatsapp_message_id TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE(bill_split_id, tenant_id)
+);
+
+CREATE TABLE IF NOT EXISTS management_bill_batches (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  period_month INTEGER NOT NULL,
+  period_year INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'created' CHECK(status IN ('created', 'sent')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(period_month, period_year)
+);
+
+CREATE TABLE IF NOT EXISTS management_tenant_bills (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  batch_id INTEGER NOT NULL REFERENCES management_bill_batches(id) ON DELETE CASCADE,
+  tenant_id INTEGER NOT NULL REFERENCES tenants(id),
+  maintenance_fees REAL NOT NULL DEFAULT 0,
+  generator_fees REAL NOT NULL DEFAULT 0,
+  total REAL NOT NULL,
+  payment_status TEXT NOT NULL DEFAULT 'pending' CHECK(payment_status IN ('pending', 'paid')),
+  payment_method TEXT CHECK(payment_method IN ('cash', 'upi', 'card')),
+  payment_date TEXT,
+  whatsapp_sent_at TEXT,
+  whatsapp_message_id TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(batch_id, tenant_id)
 );
 
 CREATE TABLE IF NOT EXISTS app_config (

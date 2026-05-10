@@ -1,10 +1,33 @@
 import { calculateSplit } from './calc';
-import { buildTenantBillPdfBytes, getBillPayDate, getBillPeriodLabel, getTenantBillFileName, getTenantBillNumber } from './tenantBillPdf';
-import { sendWhatsAppTemplateWithMedia, uploadWhatsAppMedia } from './whatsappClient';
+import {
+  buildTenantBillPdfBytes,
+  getBillPayDate,
+  getBillPeriodLabel,
+  getTenantBillFileName,
+  getTenantBillFolderName,
+  getTenantBillNumber,
+} from './tenantBillPdf';
+import {
+  sendWhatsAppReminderTemplate,
+  sendWhatsAppTemplateWithMedia,
+  uploadWhatsAppMedia,
+} from './whatsappClient';
+import {
+  buildManagementBillPdfBytes,
+  getManagementBillFileName,
+  getManagementBillFolderName,
+  getManagementBillNumber,
+  getManagementBillPeriodLabel,
+} from './managementBillPdf';
 import type {
   AppSettings,
   Bill,
   BillSplit,
+  ManagementBatchDetail,
+  ManagementBatchSummary,
+  ManagementBillBatch,
+  ManagementTenantBillRow,
+  PaymentLedgerEntry,
   PaymentMethod,
   PaymentStatus,
   SessionUser,
@@ -21,12 +44,17 @@ type StoredSplit = BillSplit & {
   rows: any[];
 };
 
+type StoredManagementBatch = ManagementBillBatch & {
+  rows: any[];
+};
+
 type BrowserState = {
   sessionUserId: number | null;
   users: StoredUser[];
   tenants: Tenant[];
   bills: Bill[];
   splits: StoredSplit[];
+  managementBatches: StoredManagementBatch[];
   settings: AppSettings;
 };
 
@@ -37,7 +65,10 @@ const defaultSettings: AppSettings = {
   company_address: '',
   whatsapp_phone_number_id: '',
   whatsapp_access_token: '',
-  whatsapp_template_name: 'electricity_bill',
+  whatsapp_electricity_bill_template: 'electricity_bill',
+  whatsapp_electricity_reminder_template: 'electricity_reminder',
+  whatsapp_management_bill_template: 'management_bill',
+  whatsapp_management_reminder_template: 'management_reminder',
   whatsapp_template_language: 'en',
 };
 
@@ -56,6 +87,7 @@ const defaultState: BrowserState = {
   tenants: [],
   bills: [],
   splits: [],
+  managementBatches: [],
   settings: defaultSettings,
 };
 
@@ -71,18 +103,32 @@ function loadState(): BrowserState {
 
   try {
     const parsed = JSON.parse(raw) as Partial<BrowserState>;
+    const parsedSettings = (parsed.settings ?? {}) as Partial<AppSettings> & { whatsapp_template_name?: string };
     return {
       ...clone(defaultState),
       ...parsed,
       settings: {
-        ...defaultSettings,
-        ...(parsed.settings ?? {}),
+        company_name: parsedSettings.company_name ?? defaultSettings.company_name,
+        company_address: parsedSettings.company_address ?? defaultSettings.company_address,
+        whatsapp_phone_number_id: parsedSettings.whatsapp_phone_number_id ?? defaultSettings.whatsapp_phone_number_id,
+        whatsapp_access_token: parsedSettings.whatsapp_access_token ?? defaultSettings.whatsapp_access_token,
+        whatsapp_electricity_bill_template:
+          parsedSettings.whatsapp_electricity_bill_template ?? parsedSettings.whatsapp_template_name ?? defaultSettings.whatsapp_electricity_bill_template,
+        whatsapp_electricity_reminder_template:
+          parsedSettings.whatsapp_electricity_reminder_template ?? defaultSettings.whatsapp_electricity_reminder_template,
+        whatsapp_management_bill_template:
+          parsedSettings.whatsapp_management_bill_template ?? defaultSettings.whatsapp_management_bill_template,
+        whatsapp_management_reminder_template:
+          parsedSettings.whatsapp_management_reminder_template ?? defaultSettings.whatsapp_management_reminder_template,
+        whatsapp_template_language: parsedSettings.whatsapp_template_language ?? defaultSettings.whatsapp_template_language,
       },
       users: parsed.users?.length ? (parsed.users as StoredUser[]) : clone(defaultState.users),
       tenants: parsed.tenants?.length
         ? (parsed.tenants as Tenant[]).map((tenant) => ({
             ...tenant,
             present_reading: tenant.present_reading ?? 0,
+            maintenance_fees: tenant.maintenance_fees ?? 0,
+            generator_fees: tenant.generator_fees ?? 0,
           }))
         : [],
       bills: parsed.bills?.length
@@ -93,6 +139,7 @@ function loadState(): BrowserState {
           }))
         : [],
       splits: parsed.splits?.length ? (parsed.splits as StoredSplit[]) : [],
+      managementBatches: parsed.managementBatches?.length ? (parsed.managementBatches as StoredManagementBatch[]) : [],
     };
   } catch {
     return clone(defaultState);
@@ -111,6 +158,10 @@ function tenantBillRowId(splitId: number, tenantId: number) {
   return splitId * 100000 + tenantId;
 }
 
+function managementBillRowId(batchId: number, tenantId: number) {
+  return batchId * 100000 + tenantId;
+}
+
 function getCurrentUser(state: BrowserState) {
   return state.users.find((user) => user.id === state.sessionUserId) ?? null;
 }
@@ -126,9 +177,29 @@ function seedSplitRows(tenants: Tenant[]) {
     fixed_adjust: 0,
     extra_adjust: 0,
     interest_adjust: 0,
+    other_adjust: 0,
     payment_status: 'pending' as PaymentStatus,
     payment_method: null as PaymentMethod | null,
   }));
+}
+
+function seedManagementRows(tenants: Tenant[]) {
+  return tenants
+    .filter((tenant) => tenant.active && ((tenant.maintenance_fees ?? 0) > 0 || (tenant.generator_fees ?? 0) > 0))
+    .map((tenant) => ({
+      tenant_id: tenant.id,
+      tenant_name: tenant.name,
+      room_no: tenant.room_no,
+      phone: tenant.phone,
+      maintenance_fees: tenant.maintenance_fees ?? 0,
+      generator_fees: tenant.generator_fees ?? 0,
+      total: (tenant.maintenance_fees ?? 0) + (tenant.generator_fees ?? 0),
+      payment_status: 'pending' as PaymentStatus,
+      payment_method: null as PaymentMethod | null,
+      payment_date: null as string | null,
+      whatsapp_sent_at: null as string | null,
+      whatsapp_message_id: null as string | null,
+    }));
 }
 
 function getPaymentMethod(row: any): PaymentMethod | null {
@@ -268,6 +339,35 @@ export function createBrowserApi() {
         bills.sort((a, b) => (b.period_year - a.period_year) || (b.period_month - a.period_month) || (b.bill_split_id - a.bill_split_id));
         return { tenant, bills };
       },
+      async getManagementBills(tenantId: number): Promise<ManagementTenantBillRow[]> {
+        const state = getState();
+        const tenant = state.tenants.find((item) => item.id === tenantId) ?? null;
+        const rows: ManagementTenantBillRow[] = [];
+        for (const batch of state.managementBatches) {
+          for (const row of batch.rows ?? []) {
+            if (row.tenant_id !== tenantId) continue;
+            rows.push({
+              id: row.id ?? managementBillRowId(batch.id, tenantId),
+              batch_id: batch.id,
+              tenant_id: tenantId,
+              tenant_name: tenant?.name ?? row.tenant_name ?? '',
+              room_no: tenant?.room_no ?? row.room_no ?? '',
+              phone: tenant?.phone ?? row.phone ?? null,
+              maintenance_fees: row.maintenance_fees ?? tenant?.maintenance_fees ?? 0,
+              generator_fees: row.generator_fees ?? tenant?.generator_fees ?? 0,
+              total: row.total ?? (row.maintenance_fees ?? 0) + (row.generator_fees ?? 0),
+              payment_status: row.payment_status ?? 'pending',
+              payment_method: getPaymentMethod(row),
+              payment_date: row.payment_date ?? null,
+              whatsapp_sent_at: row.whatsapp_sent_at ?? null,
+              whatsapp_message_id: row.whatsapp_message_id ?? null,
+              period_month: batch.period_month,
+              period_year: batch.period_year,
+            });
+          }
+        }
+        return clone(rows.sort((a, b) => (b.period_year - a.period_year) || (b.period_month - a.period_month) || (b.batch_id - a.batch_id)));
+      },
       async updateBillPayment(
         tenantBillId: number,
         paymentStatus: PaymentStatus,
@@ -298,7 +398,19 @@ export function createBrowserApi() {
           const tenants = [...state.tenants];
           const existingIndex = tenant.id ? tenants.findIndex((item) => item.id === tenant.id) : -1;
           if (existingIndex >= 0) {
-            tenants[existingIndex] = { ...(tenants[existingIndex] as Tenant), ...(tenant as Tenant) };
+            const existing = tenants[existingIndex] as Tenant;
+            tenants[existingIndex] = {
+              ...existing,
+              ...tenant,
+              room_no: tenant.room_no ?? existing.room_no,
+              name: tenant.name ?? existing.name,
+              phone: tenant.phone === undefined ? existing.phone : tenant.phone,
+              email: tenant.email === undefined ? existing.email : tenant.email,
+              present_reading: tenant.present_reading ?? existing.present_reading,
+              maintenance_fees: tenant.maintenance_fees ?? existing.maintenance_fees,
+              generator_fees: tenant.generator_fees ?? existing.generator_fees,
+              active: tenant.active ?? existing.active,
+            };
           } else {
             tenants.push({
               id: nextId(tenants),
@@ -307,11 +419,488 @@ export function createBrowserApi() {
               phone: tenant.phone ?? null,
               email: tenant.email ?? null,
               present_reading: tenant.present_reading ?? 0,
+              maintenance_fees: tenant.maintenance_fees ?? 0,
+              generator_fees: tenant.generator_fees ?? 0,
               active: tenant.active ?? 1,
             });
           }
           return { ...state, tenants };
         });
+      },
+    },
+    management: {
+      async listBatches(): Promise<ManagementBatchSummary[]> {
+        const state = getState();
+        return clone(
+          state.managementBatches
+            .map((batch) => ({
+              ...batch,
+              tenant_count: batch.rows.length,
+              total_to_collect: batch.rows.reduce((sum, row: any) => sum + (row.total ?? 0), 0),
+              total_collected: batch.rows
+                .filter((row: any) => row.payment_status === 'paid')
+                .reduce((sum, row: any) => sum + (row.total ?? 0), 0),
+            }))
+            .sort((a, b) => (b.period_year - a.period_year) || (b.period_month - a.period_month) || (b.id - a.id)),
+        );
+      },
+      async createBatch(period: { period_month: number; period_year: number }) {
+        let createdId = 0;
+        setState((state) => {
+          const existing = state.managementBatches.find(
+            (batch) => batch.period_month === period.period_month && batch.period_year === period.period_year,
+          );
+          if (existing) {
+            throw new Error(`A management batch already exists for ${period.period_month}/${period.period_year}. Please open the existing batch instead.`);
+          }
+
+          const batch: StoredManagementBatch = {
+            id: nextId(state.managementBatches),
+            period_month: period.period_month,
+            period_year: period.period_year,
+            status: 'created',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            rows: seedManagementRows(state.tenants),
+          };
+          createdId = batch.id;
+          return { ...state, managementBatches: [...state.managementBatches, batch] };
+        });
+        return { batchId: createdId };
+      },
+      async rescanBatch(batchId: number) {
+        const result = {
+          added: 0,
+          updated: 0,
+          deleted: 0,
+          skippedPaid: 0,
+        };
+
+        setState((state) => {
+          const batch = state.managementBatches.find((item) => item.id === batchId);
+          if (!batch) {
+            throw new Error('Batch not found');
+          }
+
+          const currentTenants = state.tenants
+            .filter((tenant) => tenant.active && ((tenant.maintenance_fees ?? 0) > 0 || (tenant.generator_fees ?? 0) > 0))
+            .sort((a, b) => (a.room_no || '').localeCompare(b.room_no || '') || a.name.localeCompare(b.name));
+          const existingRows = batch.rows ?? [];
+          const existingByTenantId = new Map(existingRows.map((row: any) => [row.tenant_id, row]));
+          const currentTenantIds = new Set(currentTenants.map((tenant) => tenant.id));
+          const nextRows: any[] = [];
+
+          for (const tenant of currentTenants) {
+            const existing = existingByTenantId.get(tenant.id);
+            const maintenanceFees = Number(tenant.maintenance_fees ?? 0);
+            const generatorFees = Number(tenant.generator_fees ?? 0);
+            const total = maintenanceFees + generatorFees;
+
+            if (existing) {
+              const rowId = existing.id ?? managementBillRowId(batch.id, tenant.id);
+              if (existing.payment_status === 'paid') {
+                result.skippedPaid += 1;
+                nextRows.push({
+                  ...existing,
+                  id: rowId,
+                  maintenance_fees: existing.maintenance_fees ?? maintenanceFees,
+                  generator_fees: existing.generator_fees ?? generatorFees,
+                  total: existing.total ?? total,
+                });
+                continue;
+              }
+
+              if (
+                Number(existing.maintenance_fees ?? 0) !== maintenanceFees ||
+                Number(existing.generator_fees ?? 0) !== generatorFees ||
+                Number(existing.total ?? 0) !== total
+              ) {
+                result.updated += 1;
+              }
+
+              nextRows.push({
+                ...existing,
+                id: rowId,
+                maintenance_fees: maintenanceFees,
+                generator_fees: generatorFees,
+                total,
+              });
+              continue;
+            }
+
+            result.added += 1;
+            nextRows.push({
+              id: managementBillRowId(batch.id, tenant.id),
+              tenant_id: tenant.id,
+              tenant_name: tenant.name,
+              room_no: tenant.room_no,
+              phone: tenant.phone,
+              maintenance_fees: maintenanceFees,
+              generator_fees: generatorFees,
+              total,
+              payment_status: 'pending' as PaymentStatus,
+              payment_method: null as PaymentMethod | null,
+              payment_date: null as string | null,
+              whatsapp_sent_at: null as string | null,
+              whatsapp_message_id: null as string | null,
+            });
+          }
+
+          for (const row of existingRows) {
+            if (currentTenantIds.has(row.tenant_id)) continue;
+            if (row.payment_status === 'paid') {
+              result.skippedPaid += 1;
+              nextRows.push({
+                ...row,
+                id: row.id ?? managementBillRowId(batch.id, row.tenant_id),
+              });
+              continue;
+            }
+
+            result.deleted += 1;
+          }
+
+          nextRows.sort((a, b) => {
+            const leftTenant = state.tenants.find((tenant) => tenant.id === a.tenant_id);
+            const rightTenant = state.tenants.find((tenant) => tenant.id === b.tenant_id);
+            return (
+              (leftTenant?.room_no ?? a.room_no ?? '').localeCompare(rightTenant?.room_no ?? b.room_no ?? '') ||
+              (leftTenant?.name ?? a.tenant_name ?? '').localeCompare(rightTenant?.name ?? b.tenant_name ?? '') ||
+              a.tenant_id - b.tenant_id
+            );
+          });
+
+          return {
+            ...state,
+            managementBatches: state.managementBatches.map((item) =>
+              item.id === batchId ? { ...item, updated_at: new Date().toISOString(), rows: nextRows } : item,
+            ),
+          };
+        });
+
+        return { ok: true as const, ...result };
+      },
+      async getBatch(batchId: number): Promise<ManagementBatchDetail | null> {
+        const state = getState();
+        const batch = state.managementBatches.find((item) => item.id === batchId);
+        if (!batch) return null;
+
+        return clone({
+          batch: {
+            id: batch.id,
+            period_month: batch.period_month,
+            period_year: batch.period_year,
+            status: batch.status,
+            created_at: batch.created_at,
+            updated_at: batch.updated_at,
+          },
+          rows: batch.rows
+            .map((row: any) => {
+              const tenant = state.tenants.find((item) => item.id === row.tenant_id);
+              if (!tenant) return null;
+              return {
+                id: row.id ?? managementBillRowId(batch.id, row.tenant_id),
+                batch_id: batch.id,
+                tenant_id: row.tenant_id,
+                tenant_name: tenant.name,
+                room_no: tenant.room_no,
+                phone: tenant.phone,
+                maintenance_fees: row.maintenance_fees ?? tenant.maintenance_fees ?? 0,
+                generator_fees: row.generator_fees ?? tenant.generator_fees ?? 0,
+                total: row.total ?? (row.maintenance_fees ?? 0) + (row.generator_fees ?? 0),
+                payment_status: row.payment_status ?? 'pending',
+                payment_method: getPaymentMethod(row),
+                payment_date: row.payment_date ?? null,
+                whatsapp_sent_at: row.whatsapp_sent_at ?? null,
+                whatsapp_message_id: row.whatsapp_message_id ?? null,
+                period_month: batch.period_month,
+                period_year: batch.period_year,
+              };
+            })
+            .filter((item): item is ManagementTenantBillRow => Boolean(item)),
+        });
+      },
+      async updateBillPayment(
+        managementBillId: number,
+        paymentStatus: PaymentStatus,
+        paymentMethod: PaymentMethod | null,
+        paymentDate: string | null,
+      ) {
+        setState((state) => ({
+          ...state,
+          managementBatches: state.managementBatches.map((batch) => ({
+            ...batch,
+            rows: batch.rows.map((row: any) =>
+              (row.id ?? managementBillRowId(batch.id, row.tenant_id)) === managementBillId
+                ? {
+                    ...row,
+                    id: row.id ?? managementBillRowId(batch.id, row.tenant_id),
+                    payment_status: paymentStatus,
+                    payment_method: paymentStatus === 'paid' ? paymentMethod : null,
+                    payment_date: paymentStatus === 'paid' ? paymentDate : null,
+                  }
+                : row,
+            ),
+          })),
+        }));
+        return { ok: true };
+      },
+      async downloadAll(batchId: number) {
+        const state = getState();
+        const batch = state.managementBatches.find((item) => item.id === batchId);
+        if (!batch) {
+          throw new Error('Batch not found');
+        }
+
+        const picker = (window as any).showDirectoryPicker;
+        if (typeof picker !== 'function') {
+          throw new Error('Folder downloads are only available in Chromium-based browsers.');
+        }
+
+        const root = await picker.call(window, { mode: 'readwrite', startIn: 'downloads' });
+        const folder = await root.getDirectoryHandle(getManagementBillFolderName(batch), { create: true });
+        for (const row of batch.rows ?? []) {
+          const tenant = state.tenants.find((item) => item.id === row.tenant_id);
+          if (!tenant) continue;
+          const pdfBytes = await buildManagementBillPdfBytes({
+            settings: state.settings,
+            batch: {
+              id: batch.id,
+              period_month: batch.period_month,
+              period_year: batch.period_year,
+              status: batch.status,
+              created_at: batch.created_at,
+              updated_at: batch.updated_at,
+            },
+            row: {
+              id: row.id ?? managementBillRowId(batch.id, row.tenant_id),
+              batch_id: batch.id,
+              tenant_id: row.tenant_id,
+              tenant_name: tenant.name,
+              room_no: tenant.room_no,
+              phone: tenant.phone,
+              maintenance_fees: row.maintenance_fees ?? tenant.maintenance_fees ?? 0,
+              generator_fees: row.generator_fees ?? tenant.generator_fees ?? 0,
+              total: row.total ?? (row.maintenance_fees ?? 0) + (row.generator_fees ?? 0),
+              payment_status: row.payment_status ?? 'pending',
+              payment_method: getPaymentMethod(row),
+              payment_date: row.payment_date ?? null,
+              whatsapp_sent_at: row.whatsapp_sent_at ?? null,
+              whatsapp_message_id: row.whatsapp_message_id ?? null,
+              period_month: batch.period_month,
+              period_year: batch.period_year,
+            },
+          });
+          const fileHandle = await folder.getFileHandle(getManagementBillFileName(batch.id, row), { create: true });
+          const writable = await fileHandle.createWritable();
+          await writable.write(pdfBytes);
+          await writable.close();
+        }
+
+        return { ok: true as const, folderPath: `${root.name}/${getManagementBillFolderName(batch)}`, fileCount: (batch.rows ?? []).length };
+      },
+      async sendAll(batchId: number) {
+        const state = getState();
+        const batch = state.managementBatches.find((item) => item.id === batchId);
+        if (!batch) {
+          throw new Error('Batch not found');
+        }
+
+        if (!state.settings.whatsapp_phone_number_id || !state.settings.whatsapp_access_token) {
+          throw new Error('WhatsApp settings are missing. Please configure the phone number ID and access token first.');
+        }
+
+        const results: Array<{ tenant_id: number; ok: boolean; message?: string }> = [];
+        for (const row of batch.rows) {
+          const tenant = state.tenants.find((item) => item.id === row.tenant_id);
+          const currentPhone = tenant?.phone ?? row.phone;
+          const currentTenantName = tenant?.name ?? row.tenant_name;
+          const currentRoom = tenant?.room_no ?? row.room_no;
+
+          if (!currentPhone) {
+            results.push({ tenant_id: row.tenant_id, ok: false, message: 'Phone number missing' });
+            continue;
+          }
+
+          try {
+            const pdfBytes = await buildManagementBillPdfBytes({
+              settings: state.settings,
+              batch: {
+                id: batch.id,
+                period_month: batch.period_month,
+                period_year: batch.period_year,
+                status: batch.status,
+                created_at: batch.created_at,
+                updated_at: batch.updated_at,
+              },
+              row: {
+                id: row.id ?? managementBillRowId(batch.id, row.tenant_id),
+                batch_id: batch.id,
+                tenant_id: row.tenant_id,
+                tenant_name: currentTenantName,
+                room_no: currentRoom,
+                phone: currentPhone,
+                maintenance_fees: row.maintenance_fees ?? 0,
+                generator_fees: row.generator_fees ?? 0,
+                total: row.total ?? (row.maintenance_fees ?? 0) + (row.generator_fees ?? 0),
+                payment_status: row.payment_status ?? 'pending',
+                payment_method: getPaymentMethod(row),
+                payment_date: row.payment_date ?? null,
+                whatsapp_sent_at: row.whatsapp_sent_at ?? null,
+                whatsapp_message_id: row.whatsapp_message_id ?? null,
+                period_month: batch.period_month,
+                period_year: batch.period_year,
+              },
+            });
+            const media = await uploadWhatsAppMedia({
+              phoneNumberId: state.settings.whatsapp_phone_number_id,
+              accessToken: state.settings.whatsapp_access_token,
+              fileBytes: pdfBytes,
+              fileName: getManagementBillFileName(batch.id, row),
+            });
+            const sent = await sendWhatsAppTemplateWithMedia({
+              phoneNumberId: state.settings.whatsapp_phone_number_id,
+              accessToken: state.settings.whatsapp_access_token,
+              templateName: state.settings.whatsapp_management_bill_template || 'management_bill',
+              language: state.settings.whatsapp_template_language || 'en',
+              to: currentPhone,
+              bodyParams: [
+                currentTenantName,
+                getManagementBillPeriodLabel(batch),
+                getManagementBillNumber(
+                  {
+                    id: batch.id,
+                    period_month: batch.period_month,
+                    period_year: batch.period_year,
+                    status: batch.status,
+                    created_at: batch.created_at,
+                    updated_at: batch.updated_at,
+                  },
+                  {
+                    id: row.id ?? managementBillRowId(batch.id, row.tenant_id),
+                    batch_id: batch.id,
+                    tenant_id: row.tenant_id,
+                    tenant_name: currentTenantName,
+                    room_no: currentRoom,
+                    phone: currentPhone,
+                    maintenance_fees: row.maintenance_fees ?? 0,
+                    generator_fees: row.generator_fees ?? 0,
+                    total: row.total ?? (row.maintenance_fees ?? 0) + (row.generator_fees ?? 0),
+                    payment_status: row.payment_status ?? 'pending',
+                    payment_method: getPaymentMethod(row),
+                    payment_date: row.payment_date ?? null,
+                    whatsapp_sent_at: row.whatsapp_sent_at ?? null,
+                    whatsapp_message_id: row.whatsapp_message_id ?? null,
+                    period_month: batch.period_month,
+                    period_year: batch.period_year,
+                  },
+                ),
+                currentRoom,
+                String(row.total ?? 0),
+              ],
+              mediaId: media.mediaId,
+            });
+            results.push({ tenant_id: row.tenant_id, ok: true });
+            setState((current) => ({
+              ...current,
+              managementBatches: current.managementBatches.map((item) =>
+                item.id === batchId
+                  ? {
+                      ...item,
+                      status: 'sent',
+                      rows: item.rows.map((existingRow: any) =>
+                        (existingRow.id ?? managementBillRowId(item.id, existingRow.tenant_id)) ===
+                        (row.id ?? managementBillRowId(batch.id, row.tenant_id))
+                          ? {
+                              ...existingRow,
+                              whatsapp_sent_at: new Date().toISOString(),
+                              whatsapp_message_id: sent.messageId,
+                            }
+                          : existingRow,
+                      ),
+                    }
+                  : item,
+              ),
+            }));
+          } catch (error: any) {
+            results.push({ tenant_id: row.tenant_id, ok: false, message: error?.message ?? 'Failed' });
+          }
+        }
+
+        return { ok: results.some((item) => item.ok), results };
+      },
+      async sendReminder(managementBillId: number) {
+        const state = getState();
+        const batch = state.managementBatches.find((item) => item.rows.some((row: any) => (row.id ?? managementBillRowId(item.id, row.tenant_id)) === managementBillId));
+        if (!batch) {
+          return { ok: false, messageId: 'browser://management-reminder' };
+        }
+        const row = batch.rows.find((item: any) => (item.id ?? managementBillRowId(batch.id, item.tenant_id)) === managementBillId);
+        if (!row) {
+          return { ok: false, messageId: 'browser://management-reminder' };
+        }
+        const tenant = state.tenants.find((item) => item.id === row.tenant_id);
+        const phone = tenant?.phone ?? row.phone;
+        if (!phone) {
+          return { ok: false, messageId: 'browser://management-reminder' };
+        }
+
+        await sendWhatsAppReminderTemplate({
+          phoneNumberId: state.settings.whatsapp_phone_number_id,
+          accessToken: state.settings.whatsapp_access_token,
+          templateName: state.settings.whatsapp_management_reminder_template || 'management_reminder',
+          language: state.settings.whatsapp_template_language || 'en',
+          to: phone,
+          bodyParams: [tenant?.name ?? row.tenant_name, getManagementBillPeriodLabel(batch), String(row.total ?? 0)],
+        }).catch(() => undefined);
+
+        return { ok: true, messageId: 'browser://management-reminder' };
+      },
+    },
+    payments: {
+      async list() {
+        const state = getState();
+        const entries: PaymentLedgerEntry[] = [];
+        for (const split of state.splits) {
+          const bill = state.bills.find((item) => item.id === split.bill_id);
+          if (!bill) continue;
+          for (const row of split.rows) {
+            if (row.payment_status !== 'paid') continue;
+            const tenant = state.tenants.find((item) => item.id === row.tenant_id);
+            entries.push({
+              paid_for: 'electricity',
+              source_id: row.id ?? tenantBillRowId(split.id, row.tenant_id),
+              tenant_id: row.tenant_id,
+              tenant_name: tenant?.name ?? row.tenant_name ?? '',
+              room_no: tenant?.room_no ?? row.room_no ?? '',
+              paid_date: row.payment_date ?? split.reading_date,
+              paid_amount: row.payable ?? 0,
+              paid_method: getPaymentMethod(row) ?? 'cash',
+              period_month: bill.period_month,
+              period_year: bill.period_year,
+            });
+          }
+        }
+        for (const batch of state.managementBatches) {
+          for (const row of batch.rows) {
+            if (row.payment_status !== 'paid') continue;
+            const tenant = state.tenants.find((item) => item.id === row.tenant_id);
+            entries.push({
+              paid_for: 'management',
+              source_id: row.id ?? managementBillRowId(batch.id, row.tenant_id),
+              tenant_id: row.tenant_id,
+              tenant_name: tenant?.name ?? row.tenant_name ?? '',
+              room_no: tenant?.room_no ?? row.room_no ?? '',
+              paid_date: row.payment_date ?? batch.created_at,
+              paid_amount: row.total ?? 0,
+              paid_method: getPaymentMethod(row) ?? 'cash',
+              period_month: batch.period_month,
+              period_year: batch.period_year,
+            });
+          }
+        }
+
+        return clone(entries.sort((a, b) => String(b.paid_date).localeCompare(String(a.paid_date))));
       },
     },
     bills: {
@@ -320,9 +909,12 @@ export function createBrowserApi() {
         return clone(
           state.bills.map((bill) => {
             const split = state.splits.find((item) => item.bill_id === bill.id);
+            const splitRows = split?.rows ?? [];
             return {
               ...bill,
               split_status: split?.status ?? null,
+              tenant_count: splitRows.length,
+              pending_count: splitRows.filter((row: any) => row.payment_status !== 'paid').length,
             };
           }),
         );
@@ -357,6 +949,16 @@ export function createBrowserApi() {
           };
 
           const existingIndex = bill.id ? bills.findIndex((item) => item.id === bill.id) : -1;
+          const duplicate = bills.find(
+            (item) =>
+              item.period_month === payload.period_month &&
+              item.period_year === payload.period_year &&
+              item.id !== bill.id,
+          );
+          if (duplicate) {
+            throw new Error(`A bill already exists for ${payload.period_month}/${payload.period_year}. Please edit the existing bill instead.`);
+          }
+
           if (existingIndex >= 0) {
             bills[existingIndex] = { ...(bills[existingIndex] as Bill), ...payload };
           } else {
@@ -427,6 +1029,7 @@ export function createBrowserApi() {
         }
 
         const root = await picker.call(window, { mode: 'readwrite', startIn: 'downloads' });
+        const folder = await root.getDirectoryHandle(getTenantBillFolderName(bill), { create: true });
         for (const row of split.rows ?? []) {
           const pdfBytes = await buildTenantBillPdfBytes({
             settings: state.settings,
@@ -444,13 +1047,13 @@ export function createBrowserApi() {
             },
             row,
           });
-          const fileHandle = await root.getFileHandle(getTenantBillFileName(split.id, row), { create: true });
+          const fileHandle = await folder.getFileHandle(getTenantBillFileName(split.id, row), { create: true });
           const writable = await fileHandle.createWritable();
           await writable.write(pdfBytes);
           await writable.close();
         }
 
-        return { ok: true as const, folderPath: root.name, fileCount: (split.rows ?? []).length };
+        return { ok: true as const, folderPath: `${root.name}/${getTenantBillFolderName(bill)}`, fileCount: (split.rows ?? []).length };
       },
     },
     users: {
@@ -580,15 +1183,17 @@ export function createBrowserApi() {
             const sent = await sendWhatsAppTemplateWithMedia({
               phoneNumberId: state.settings.whatsapp_phone_number_id,
               accessToken: state.settings.whatsapp_access_token,
-              templateName: state.settings.whatsapp_template_name || 'electricity_bill',
+              templateName: state.settings.whatsapp_electricity_bill_template || 'electricity_bill',
               language: state.settings.whatsapp_template_language || 'en',
               to: currentPhone,
-              tenantName: currentTenantName,
-              period: getBillPeriodLabel(bill),
-              billNumber: getTenantBillNumber(split, { ...row, room_no: currentRoom }),
-              room: currentRoom,
-              amount: String(row.payable),
-              payDate: getBillPayDate(split.reading_date),
+              bodyParams: [
+                currentTenantName,
+                getBillPeriodLabel(bill),
+                getTenantBillNumber(split, { ...row, room_no: currentRoom }),
+                currentRoom,
+                String(row.payable),
+                getBillPayDate(split.reading_date),
+              ],
               mediaId: media.mediaId,
             });
             results.push({ tenant_id: row.tenant_id, ok: true });
@@ -620,7 +1225,38 @@ export function createBrowserApi() {
         return { ok: results.some((item) => item.ok), results };
       },
       async sendReminder(tenantBillId?: number) {
-        return { ok: Boolean(tenantBillId), messageId: 'browser://reminder' };
+        if (!tenantBillId) {
+          return { ok: false, messageId: 'browser://reminder' };
+        }
+
+        const state = getState();
+        for (const split of state.splits) {
+          const bill = state.bills.find((item) => item.id === split.bill_id);
+          const row = split.rows.find((item: any) => (item.id ?? tenantBillRowId(split.id, item.tenant_id)) === tenantBillId);
+          if (!row) continue;
+          const tenant = state.tenants.find((item) => item.id === row.tenant_id);
+          const phone = tenant?.phone ?? row.phone;
+          if (!phone) {
+            return { ok: false, messageId: 'browser://reminder' };
+          }
+
+          await sendWhatsAppReminderTemplate({
+            phoneNumberId: state.settings.whatsapp_phone_number_id,
+            accessToken: state.settings.whatsapp_access_token,
+            templateName: state.settings.whatsapp_electricity_reminder_template || 'electricity_reminder',
+            language: state.settings.whatsapp_template_language || 'en',
+            to: phone,
+            bodyParams: [
+              tenant?.name ?? row.tenant_name,
+              bill ? getBillPeriodLabel(bill) : `${split.reading_date.slice(0, 7)}`,
+              String(row.payable ?? 0),
+            ],
+          }).catch(() => undefined);
+
+          return { ok: true, messageId: 'browser://reminder' };
+        }
+
+        return { ok: false, messageId: 'browser://reminder' };
       },
     },
     settings: {

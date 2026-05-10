@@ -7,6 +7,9 @@ import Tenants from './pages/Tenants';
 import TenantBills from './pages/TenantBills';
 import MyBills from './pages/MyBills';
 import BillSplit from './pages/BillSplit';
+import Management from './pages/Management';
+import ManagementBatch from './pages/ManagementBatch';
+import Payments from './pages/Payments';
 import Users from './pages/Users';
 import Settings from './pages/Settings';
 import Layout from './components/Layout';
@@ -96,6 +99,36 @@ export default function App() {
           <ProtectedRoute session={session}>
             <Layout session={session} onSessionChange={setSession}>
               <BillSplit />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/management"
+        element={
+          <ProtectedRoute session={session}>
+            <Layout session={session} onSessionChange={setSession}>
+              <Management />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/management/:batchId"
+        element={
+          <ProtectedRoute session={session}>
+            <Layout session={session} onSessionChange={setSession}>
+              <ManagementBatch />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/payments"
+        element={
+          <ProtectedRoute session={session}>
+            <Layout session={session} onSessionChange={setSession}>
+              <Payments />
             </Layout>
           </ProtectedRoute>
         }

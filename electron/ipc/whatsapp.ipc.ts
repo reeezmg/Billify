@@ -2,7 +2,7 @@ import { ipcMain } from 'electron';
 import fs from 'node:fs/promises';
 import { generateTenantBillPdf } from '../services/pdf.service';
 import { execute, queryAll, queryOne } from '../db/client';
-import { uploadMedia, sendTemplateWithMedia, sendTextMessage } from '../services/whatsapp.service';
+import { uploadMedia, sendTemplateWithMedia, sendReminderTemplate } from '../services/whatsapp.service';
 import { getBillPayDate, getBillPeriodLabel, getTenantBillNumber } from '../../src/lib/tenantBillPdf';
 
 export function registerWhatsappIpc() {
@@ -44,15 +44,17 @@ export function registerWhatsappIpc() {
         const sent = await sendTemplateWithMedia({
           phoneNumberId: config.whatsapp_phone_number_id,
           accessToken: config.whatsapp_access_token,
-          templateName: config.whatsapp_template_name || 'electricity_bill',
+          templateName: config.whatsapp_electricity_bill_template || 'electricity_bill',
           language: config.whatsapp_template_language || 'en',
           to: row.phone,
-          tenantName: row.tenant_name,
-          period: getBillPeriodLabel(split),
-          billNumber: getTenantBillNumber(split, row),
-          room: row.room_no,
-          amount: String(row.payable),
-          payDate: getBillPayDate(split.reading_date),
+          bodyParams: [
+            row.tenant_name,
+            getBillPeriodLabel(split),
+            getTenantBillNumber(split, row),
+            row.room_no,
+            String(row.payable),
+            getBillPayDate(split.reading_date),
+          ],
           mediaId: media.mediaId,
         });
         await execute('UPDATE tenant_bills SET whatsapp_sent_at = datetime(\'now\'), whatsapp_message_id = ? WHERE id = ?', [
@@ -85,13 +87,13 @@ export function registerWhatsappIpc() {
     const settings = await queryAll<{ key: string; value: string | null }>('SELECT key, value FROM app_config');
     const config = Object.fromEntries(settings.map((entry) => [entry.key, entry.value ?? '']));
     const amount = Number(row.payable ?? 0).toFixed(2);
-    const body = `Hi ${row.tenant_name}, your electricity bill for ${row.period_month}/${row.period_year} is pending. Amount due: Rs ${amount}. Please pay soon.`;
-
-    const sent = await sendTextMessage({
+    const sent = await sendReminderTemplate({
       phoneNumberId: config.whatsapp_phone_number_id,
       accessToken: config.whatsapp_access_token,
+      templateName: config.whatsapp_electricity_reminder_template || 'electricity_reminder',
+      language: config.whatsapp_template_language || 'en',
       to: row.phone,
-      body,
+      bodyParams: [row.tenant_name, getBillPeriodLabel(row), amount],
     });
 
     return { ok: true, messageId: sent.messageId };
