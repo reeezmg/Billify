@@ -83,6 +83,7 @@ const api = {
   settings: {
     get: () => ipcRenderer.invoke('settings:get') as Promise<AppSettings>,
     save: (settings: AppSettings) => ipcRenderer.invoke('settings:save', settings),
+    resetData: () => ipcRenderer.invoke('settings:resetData'),
   },
 };
 

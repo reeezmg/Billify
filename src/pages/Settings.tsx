@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { AppSettings } from '../types';
+import type { AppSettings, SessionUser } from '../types';
 
 const labelMap: Record<keyof AppSettings, string> = {
   company_name: 'Company name',
@@ -13,7 +13,7 @@ const labelMap: Record<keyof AppSettings, string> = {
   whatsapp_template_language: 'WhatsApp template language',
 };
 
-export default function Settings() {
+export default function Settings({ onSessionChange }: { onSessionChange: (session: SessionUser | null) => void }) {
   const [settings, setSettings] = useState<AppSettings>({
     company_name: 'Billify Building',
     company_address: '',
@@ -26,9 +26,31 @@ export default function Settings() {
     whatsapp_template_language: 'en',
   });
 
+  const [resetting, setResetting] = useState(false);
+  const [resetError, setResetError] = useState('');
+
   useEffect(() => {
     window.api.settings.get().then(setSettings);
   }, []);
+
+  const resetData = async () => {
+    const confirmed = window.confirm(
+      'This will permanently delete ALL tenants, bills, splits, payments, and users, and restore the default admin login (admin / admin). Company and WhatsApp settings will be kept. This cannot be undone. Continue?',
+    );
+    if (!confirmed) return;
+    const confirmedAgain = window.confirm('Are you absolutely sure? This is your last chance to cancel.');
+    if (!confirmedAgain) return;
+
+    setResetting(true);
+    setResetError('');
+    try {
+      await window.api.settings.resetData();
+      onSessionChange(null);
+    } catch (err) {
+      setResetError(err instanceof Error ? err.message : 'Unable to reset data.');
+      setResetting(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -47,6 +69,24 @@ export default function Settings() {
       <button className="rounded-xl bg-brand-500 px-4 py-2 text-white" onClick={() => window.api.settings.save(settings)}>
         Save settings
       </button>
+
+      <div className="space-y-3 rounded-3xl border border-rose-400/30 bg-rose-500/5 p-5">
+        <div>
+          <div className="text-sm font-semibold text-rose-200">Danger zone</div>
+          <p className="mt-1 text-sm text-slate-400">
+            Permanently delete all tenants, bills, splits, payments, and users, and restore the default admin login.
+            Company and WhatsApp settings above are kept. This cannot be undone.
+          </p>
+        </div>
+        {resetError ? <div className="text-sm text-rose-300">{resetError}</div> : null}
+        <button
+          className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-2 text-rose-100 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+          onClick={resetData}
+          disabled={resetting}
+        >
+          {resetting ? 'Resetting…' : 'Reset all data'}
+        </button>
+      </div>
     </div>
   );
 }

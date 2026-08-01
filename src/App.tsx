@@ -126,7 +126,7 @@ export default function App() {
         element={
           <ProtectedRoute session={session} requireAdmin>
             <Layout session={session} onSessionChange={setSession}>
-              <Settings />
+              <Settings onSessionChange={setSession} />
             </Layout>
           </ProtectedRoute>
         }
