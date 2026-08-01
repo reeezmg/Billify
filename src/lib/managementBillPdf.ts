@@ -169,7 +169,7 @@ export async function buildManagementBillPdfBytes(context: ManagementBillPdfCont
     y += headerHeight;
 
     const chargeRows: Array<[string, string, number, boolean?]> = [
-      ['Maintenance Fees', '', row.maintenance_fees],
+      ["Burjman Owner's Association", '', row.maintenance_fees],
       ['Generator Fees', '', row.generator_fees],
       ['Total', '', row.total, true],
     ];

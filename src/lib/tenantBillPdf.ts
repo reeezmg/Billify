@@ -190,7 +190,7 @@ export async function buildTenantBillPdfBytes(context: TenantBillPdfContext) {
       ['Fixed Charge', `${formatNumber(tenantFixedUnit)} x ${formatNumber(tenantFixedUnitPrice)}`, tenantFixedAmount],
       ['Consumed Charge', `${formatNumber(row.consumed_unit)} x ${formatNumber(tenantEnergyUnitPrice)}`, row.energy_charge],
       ['Extra Unit Charge', `${formatNumber(row.consumed_unit)} x ${formatNumber(tenantExtraUnitPrice)}`, tenantExtraUnitCharge],
-      ['Extra Charge', '', row.extra_charge_calc + row.extra_adjust],
+      ['Extra Charge', `${formatNumber(row.extra_charge_calc)} + ${formatNumber(row.extra_adjust)}`, row.extra_charge_calc + row.extra_adjust],
       ['Tax', `${formatNumber(bill.tax_percent)}%`, row.tax],
       ['Interest Charge', '', row.interest_charge_calc + row.interest_adjust],
       ['Other Charge', '', row.other_charge ?? row.other_charge_calc + (row.other_adjust ?? 0)],
@@ -209,24 +209,26 @@ export async function buildTenantBillPdfBytes(context: TenantBillPdfContext) {
       y += rowHeight;
     }
 
-    y += 14;
-    doc.fillColor(darkText).font('Helvetica-Bold').fontSize(12).text('Management Charges', left, y);
-    y += 20;
-    drawTableCell('Description', left, y, descWidth + calcWidth, headerHeight, { bold: true, fill: headerFill });
-    drawTableCell('Amount', left + descWidth + calcWidth, y, amountWidth, headerHeight, { bold: true, align: 'right', fill: headerFill });
-    y += headerHeight;
+    if ((row.management_total ?? 0) !== 0) {
+      y += 14;
+      doc.fillColor(darkText).font('Helvetica-Bold').fontSize(12).text('Management Charges', left, y);
+      y += 20;
+      drawTableCell('Description', left, y, descWidth + calcWidth, headerHeight, { bold: true, fill: headerFill });
+      drawTableCell('Amount', left + descWidth + calcWidth, y, amountWidth, headerHeight, { bold: true, align: 'right', fill: headerFill });
+      y += headerHeight;
 
-    const managementRows: Array<[string, number, boolean?]> = [
-      ['Maintenance Fee', row.maintenance_fee ?? 0],
-      ['Generator Fee', row.generator_fee ?? 0],
-      ['Extra Work Charges', row.management_extra_fee ?? 0],
-      ['Management Total', row.management_total ?? 0, true],
-    ];
-    for (const [label, amount, bold] of managementRows) {
-      const fill = bold ? '#f1f5f9' : '#ffffff';
-      drawTableCell(label, left, y, descWidth + calcWidth, rowHeight, { bold, fill });
-      drawTableCell(formatMoney(amount), left + descWidth + calcWidth, y, amountWidth, rowHeight, { bold, align: 'right', fill });
-      y += rowHeight;
+      const managementRows: Array<[string, number, boolean?]> = [
+        ["Burjman Owner's Association", row.maintenance_fee ?? 0],
+        ['Generator Fee', row.generator_fee ?? 0],
+        ['Extra Work Charges', row.management_extra_fee ?? 0],
+        ['Management Total', row.management_total ?? 0, true],
+      ];
+      for (const [label, amount, bold] of managementRows) {
+        const fill = bold ? '#f1f5f9' : '#ffffff';
+        drawTableCell(label, left, y, descWidth + calcWidth, rowHeight, { bold, fill });
+        drawTableCell(formatMoney(amount), left + descWidth + calcWidth, y, amountWidth, rowHeight, { bold, align: 'right', fill });
+        y += rowHeight;
+      }
     }
 
     y += 12;
