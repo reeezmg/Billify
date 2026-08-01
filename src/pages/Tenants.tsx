@@ -1,6 +1,7 @@
 import ExcelJS from 'exceljs';
 import { useEffect, useMemo, useRef, useState, type FocusEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { buildReadingSheetPdfBytes } from '../lib/readingSheetPdf';
 import type { Tenant } from '../types';
 
 const focusSelectAll = (event: FocusEvent<HTMLInputElement>) => {
@@ -131,30 +132,11 @@ export default function Tenants() {
   };
 
   const downloadReadingSheet = async () => {
-    const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet('Meter Readings', { views: [{ state: 'frozen', ySplit: 1 }] });
-    sheet.addRow(['Rm No', 'Name', 'Old', 'New']);
-    tenants
-      .filter((tenant) => tenant.active)
-      .forEach((tenant) => sheet.addRow([
-        tenant.room_no,
-        tenant.name,
-        Number(tenant.present_reading ?? 0),
-        null,
-      ]));
-    sheet.columns = [{ width: 14 }, { width: 26 }, { width: 16 }, { width: 16 }];
-    const header = sheet.getRow(1);
-    header.height = 24;
-    header.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-    header.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F9D6A' } };
-    header.alignment = { vertical: 'middle' };
-    sheet.getColumn(3).numFmt = '0.00';
-    sheet.getColumn(4).numFmt = '0.00';
-    const buffer = await workbook.xlsx.writeBuffer();
-    const url = URL.createObjectURL(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    const buffer = await buildReadingSheetPdfBytes(tenants);
+    const url = URL.createObjectURL(new Blob([buffer], { type: 'application/pdf' }));
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'Billify-Meter-Readings.xlsx';
+    link.download = 'Billify-Meter-Readings.pdf';
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -261,7 +243,7 @@ export default function Tenants() {
           </label>
           <div className="flex flex-wrap justify-end gap-3">
             <button className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-white transition hover:bg-white/10" onClick={() => void downloadReadingSheet()}>
-              Download readings Excel
+              Download readings PDF
             </button>
             <button className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-white transition hover:bg-white/10" onClick={() => setIsBulkOpen(true)}>
               Bulk upload Excel
