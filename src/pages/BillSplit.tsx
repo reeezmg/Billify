@@ -482,7 +482,7 @@ export default function BillSplit() {
     />
   );
 
-  const persistSplit = async (status: 'draft' | 'finalized', options: { trackSubmit?: boolean } = {}) => {
+  const persistSplit = async (status: 'draft' | 'finalized' | 'sent', options: { trackSubmit?: boolean } = {}) => {
     if (!split || !bill) return;
     const shouldTrackSubmit = options.trackSubmit ?? true;
     if (shouldTrackSubmit) {
@@ -531,7 +531,7 @@ export default function BillSplit() {
           }),
         ),
       );
-      if (status === 'finalized') {
+      if (status !== 'draft') {
         const splitDetails = await window.api.splits.get(split.id);
         setSplit(splitDetails?.split ?? splitDetails ?? split);
         if (splitDetails?.rows?.length) {
@@ -992,10 +992,10 @@ export default function BillSplit() {
       <div className="flex flex-wrap gap-3">
         <button
           className="rounded-xl bg-white/10 px-4 py-2 text-white"
-          onClick={() => persistSplit('draft')}
+          onClick={() => persistSplit(split?.status && split.status !== 'draft' ? split.status : 'draft')}
           disabled={isSubmitting}
         >
-          Save Draft
+          {split?.status && split.status !== 'draft' ? 'Save Changes' : 'Save Draft'}
         </button>
         <button
           className="rounded-xl bg-brand-500 px-4 py-2 text-white"
@@ -1006,7 +1006,7 @@ export default function BillSplit() {
         </button>
       </div>
 
-      {split?.status === 'finalized' ? (
+      {split?.status === 'finalized' || split?.status === 'sent' ? (
         <div className="space-y-4">
           <div className="grid gap-4 md:grid-cols-4">
             <div className="rounded-3xl border border-white/10 bg-[#0b1023] p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
