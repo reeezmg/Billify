@@ -10,6 +10,7 @@ type DashboardStats = {
 
 const monthNames = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 const formatMonth = (month: number) => monthNames[month - 1] ?? String(month);
+const periodKey = (month: number, year: number) => `${year}-${month}`;
 
 const moneyFmt = new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const formatMoney = (value: number) => `Rs ${moneyFmt.format(value)}`;
@@ -42,6 +43,16 @@ export default function Dashboard() {
   const [stats, setStats] = useState<DashboardStats>({ bills: [], tenants: [], histories: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [periodFilter, setPeriodFilter] = useState('all');
+
+  const availablePeriods = useMemo(() => {
+    const map = new Map<string, { key: string; month: number; year: number }>();
+    for (const bill of stats.bills) {
+      const key = periodKey(bill.period_month, bill.period_year);
+      if (!map.has(key)) map.set(key, { key, month: bill.period_month, year: bill.period_year });
+    }
+    return Array.from(map.values()).sort((a, b) => b.year - a.year || b.month - a.month);
+  }, [stats.bills]);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,7 +76,10 @@ export default function Dashboard() {
 
   const d = useMemo(() => {
     const sorted = sortByPeriodDesc(stats.bills);
-    const latest = sorted[0] ?? null;
+    const activeBill =
+      periodFilter === 'all'
+        ? sorted[0] ?? null
+        : stats.bills.find((b) => periodKey(b.period_month, b.period_year) === periodFilter) ?? null;
 
     const totalTenants = stats.tenants.length;
     const activeTenants = stats.tenants.filter((t) => t.active === 1).length;
@@ -73,7 +87,10 @@ export default function Dashboard() {
     const draft = stats.bills.filter((b) => b.split_status === 'draft').length;
     const finalized = stats.bills.filter((b) => b.split_status === 'finalized').length;
 
-    const tenantBills = stats.histories.flatMap((h) => h.bills);
+    const inPeriod = (b: { period_month: number; period_year: number }) =>
+      periodFilter === 'all' || periodKey(b.period_month, b.period_year) === periodFilter;
+
+    const tenantBills = stats.histories.flatMap((h) => h.bills).filter(inPeriod);
     const paid = tenantBills.filter((b) => b.payment_status === 'paid');
     const unpaid = tenantBills.filter((b) => b.payment_status !== 'paid');
     const totalPaid = paid.reduce((s, b) => s + b.payable, 0);
@@ -87,9 +104,17 @@ export default function Dashboard() {
 
     const paymentRate = tenantBills.length > 0 ? clampPercent((paid.length / tenantBills.length) * 100) : 0;
 
+    const managementCollected = paid.reduce((s, b) => s + (b.management_total ?? 0), 0);
+    const managementPending = unpaid.reduce((s, b) => s + (b.management_total ?? 0), 0);
+    const managementBreakdown = {
+      maintenance: tenantBills.reduce((s, b) => s + (b.maintenance_fee ?? 0), 0),
+      generator: tenantBills.reduce((s, b) => s + (b.generator_fee ?? 0), 0),
+      extraWork: tenantBills.reduce((s, b) => s + (b.management_extra_fee ?? 0), 0),
+    };
+
     const topPending = stats.histories
       .map((h) => {
-        const p = h.bills.filter((b) => b.payment_status !== 'paid');
+        const p = h.bills.filter((b) => b.payment_status !== 'paid' && inPeriod(b));
         return {
           tenant: h.tenant,
           amount: p.reduce((s, b) => s + b.payable, 0),
@@ -101,11 +126,11 @@ export default function Dashboard() {
       .sort((a, b) => b.amount - a.amount)
       .slice(0, 5);
 
-    const topConsumers = latest
+    const topConsumers = activeBill
       ? stats.histories
           .map((h) => {
             const billForPeriod = h.bills.find(
-              (b) => b.period_year === latest.period_year && b.period_month === latest.period_month,
+              (b) => b.period_year === activeBill.period_year && b.period_month === activeBill.period_month,
             );
             return {
               tenant: h.tenant,
@@ -123,7 +148,7 @@ export default function Dashboard() {
     const recentPayments = stats.histories
       .flatMap((h) =>
         h.bills
-          .filter((b) => b.payment_status === 'paid' && b.payment_date)
+          .filter((b) => b.payment_status === 'paid' && b.payment_date && inPeriod(b))
           .map((b) => ({
             id: b.id,
             tenantId: h.tenant?.id ?? null,
@@ -140,7 +165,7 @@ export default function Dashboard() {
 
     return {
       sorted,
-      latest,
+      latest: activeBill,
       totalTenants,
       activeTenants,
       draft,
@@ -151,28 +176,55 @@ export default function Dashboard() {
       avgBill,
       paymentRate,
       paidCount: paid.length,
+      managementCollected,
+      managementPending,
+      managementBreakdown,
       topPending,
       topConsumers,
       topConsumerMax,
       recentPayments,
     };
-  }, [stats]);
+  }, [stats, periodFilter]);
 
   return (
     <div className="space-y-4">
       <header className="flex flex-wrap items-end justify-between gap-3">
-
+        <div>
+          <h1 className="text-2xl font-semibold text-white">Dashboard</h1>
+        </div>
+        <label className="space-y-2 text-sm text-slate-300">
+          <div>Period</div>
+          <select
+            className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-white"
+            value={periodFilter}
+            onChange={(e) => setPeriodFilter(e.target.value)}
+          >
+            <option value="all">All periods</option>
+            {availablePeriods.map((period) => (
+              <option key={period.key} value={period.key}>
+                {formatMonth(period.month)} {period.year}
+              </option>
+            ))}
+          </select>
+        </label>
       </header>
 
       {error ? (
         <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</div>
       ) : null}
 
-      <section className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-5">
         <Card label="Active tenants" value={`${d.activeTenants}/${d.totalTenants}`} caption="Active rooms" loading={loading} />
         <Card label="Total paid" value={formatMoney(d.totalPaid)} caption={`${d.paidCount} payments received`} loading={loading} accent="text-emerald-300" />
         <Card label="Pending amount" value={formatMoney(d.totalPending)} caption="Still to be collected" loading={loading} accent="text-amber-300" />
         <Card label="Avg bill" value={formatMoney(d.avgBill)} caption={`Across ${formatUnits(d.totalEnergy)} units billed`} loading={loading} />
+        <Card
+          label="Management fees"
+          value={formatMoney(d.managementCollected)}
+          caption={d.managementPending > 0 ? `${formatMoney(d.managementPending)} pending` : 'All collected'}
+          loading={loading}
+          accent="text-violet-300"
+        />
       </section>
 
       <section>
@@ -187,7 +239,7 @@ export default function Dashboard() {
 
       <section className="grid gap-3 md:grid-cols-2">
         <Panel
-          title="Latest bill"
+          title={periodFilter === 'all' ? 'Latest bill' : 'Selected bill'}
           subtitle={d.latest ? `${formatMonth(d.latest.period_month)} ${d.latest.period_year}` : 'No bills yet'}
           right={d.latest ? <StatusBadge status={d.latest.split_status ?? 'draft'} /> : null}
         >
@@ -196,7 +248,7 @@ export default function Dashboard() {
             <Stat label="Tax rate" value={d.latest ? `${d.latest.tax_percent.toFixed(2)}%` : '0.00%'} />
             <Stat label="Consumed units" value={d.latest ? formatUnits(d.latest.energy_unit) : '0.00'} />
           </div>
-         
+
         </Panel>
 
         <Panel
@@ -237,6 +289,20 @@ export default function Dashboard() {
           ) : (
             <Empty title="All settled up" body="Tenants have no pending payments." />
           )}
+        </Panel>
+      </section>
+
+      <section>
+        <Panel
+          title="Management fees breakdown"
+          subtitle={periodFilter === 'all' ? 'All periods' : (d.latest ? `${formatMonth(d.latest.period_month)} ${d.latest.period_year}` : 'Selected period')}
+        >
+          <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-4">
+            <Stat label="Burjman Owner's Association" value={formatMoney(d.managementBreakdown.maintenance)} />
+            <Stat label="Generator" value={formatMoney(d.managementBreakdown.generator)} />
+            <Stat label="Extra work charges" value={formatMoney(d.managementBreakdown.extraWork)} />
+            <Stat label="Pending" value={formatMoney(d.managementPending)} />
+          </div>
         </Panel>
       </section>
 

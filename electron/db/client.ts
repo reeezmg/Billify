@@ -60,6 +60,8 @@ function removeBillsUniquePeriodConstraint(database: SqlJsDb) {
         tax_percent REAL NOT NULL DEFAULT 0,
         interest_charge REAL NOT NULL DEFAULT 0,
         other_charge REAL NOT NULL DEFAULT 0,
+        extra_unit_price REAL NOT NULL DEFAULT 0,
+        extra_unit_charge REAL NOT NULL DEFAULT 0,
         total REAL NOT NULL,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
