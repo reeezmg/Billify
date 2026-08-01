@@ -64,6 +64,11 @@ type ReminderState = {
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
+const computeAutoFixedUnit = (consumedUnit: number) => {
+  if (consumedUnit <= 40) return 0;
+  return Math.ceil(consumedUnit / 100);
+};
+
 const sortByRoomNo = <T extends { room_no: string }>(list: T[]) =>
   [...list].sort((a, b) => a.room_no.localeCompare(b.room_no, undefined, { numeric: true, sensitivity: 'base' }));
 
@@ -331,7 +336,19 @@ export default function BillSplit() {
     >,
     value: number,
   ) => {
-    setRows((prev) => prev.map((item) => (item.tenant_id === tenantId ? { ...item, [field]: value } : item)));
+    setRows((prev) =>
+      prev.map((item) => {
+        if (item.tenant_id !== tenantId) return item;
+        const updated = { ...item, [field]: value };
+        if (isManual && (field === 'previous_reading' || field === 'present_reading')) {
+          const consumedUnit = Math.max(0, updated.present_reading - updated.previous_reading);
+          const fixedUnit = computeAutoFixedUnit(consumedUnit);
+          updated.fixed_unit = fixedUnit;
+          updated.fixed_adjust = Number((fixedUnit * updated.fixed_unit_price).toFixed(2));
+        }
+        return updated;
+      }),
+    );
   };
 
   const getCalculatedAmount = (row: any, field: EditableField) => {
@@ -532,8 +549,6 @@ export default function BillSplit() {
         };
         await window.api.bills.save(updatedBill);
         setBill(updatedBill);
-      } else if (!isManual) {
-        await window.api.bills.save(bill);
       }
       await window.api.splits.save({
         split_id: split.id,
@@ -777,7 +792,7 @@ export default function BillSplit() {
           <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
             <div className="grid gap-3 lg:grid-cols-12">
               <div className="rounded-2xl border border-white/10 bg-slate-950/35 px-4 py-3 lg:col-span-12">
-                <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
+                <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
                   <div className="min-w-0">
                     <div className="text-xs text-slate-400">Bill period</div>
                     <div className="mt-1 truncate text-white">
@@ -799,14 +814,6 @@ export default function BillSplit() {
                       className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950 px-2 py-1.5 text-sm text-white"
                       value={split?.reading_date ?? ''}
                       onChange={(e) => setSplit((prev: any) => ({ ...prev, reading_date: e.target.value }))}
-                    />
-                  </label>
-                  <label className="min-w-0">
-                    <div className="text-xs text-slate-400">Extra unit price</div>
-                    <EmptyableNumberInput
-                      className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950 px-2 py-1.5 text-sm text-white"
-                      value={bill.extra_unit_price}
-                      onChange={(value) => updateManualBillValue('extra_unit_price', value)}
                     />
                   </label>
                 </div>
