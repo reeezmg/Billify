@@ -154,8 +154,8 @@ export default function MyBills() {
       </div>
 
       {isBillModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 backdrop-blur-sm">
-          <div className="w-full max-w-xl rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/40">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm">
+          <div className="max-h-[calc(100vh-2rem)] w-full max-w-5xl overflow-y-auto rounded-3xl border border-white/10 bg-slate-900 p-5 shadow-2xl shadow-black/40">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-2xl font-semibold text-white">{editingBillId ? 'Edit bill' : 'Add bill'}</h2>
@@ -174,7 +174,7 @@ export default function MyBills() {
             </div>
 
             {!editingBillId ? (
-              <div className="mt-5 grid grid-cols-2 rounded-2xl border border-white/10 bg-slate-950/50 p-1">
+              <div className="mt-4 grid grid-cols-2 rounded-2xl border border-white/10 bg-slate-950/50 p-1">
                 {(['auto', 'manual'] as BillMode[]).map((mode) => (
                   <button
                     key={mode}
@@ -191,7 +191,7 @@ export default function MyBills() {
             ) : null}
 
             <form
-              className="mt-6 space-y-6"
+              className="mt-4 space-y-4"
               onSubmit={async (event) => {
                 event.preventDefault();
                 setFormError('');
@@ -235,11 +235,11 @@ export default function MyBills() {
                 </div>
               ) : null}
 
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
                 <label className="space-y-2 text-sm text-slate-300">
                   <div>Period month</div>
                   <select
-                    className="w-full max-w-xs rounded-xl border border-white/10 bg-slate-950 px-3 py-2 pr-10 text-white"
+                    className="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 pr-10 text-white"
                     value={form.period_month}
                     onChange={(e) => setForm((prev) => ({ ...prev, period_month: Number(e.target.value) }))}
                     required
@@ -256,7 +256,7 @@ export default function MyBills() {
                   <input
                     type="number"
                     min="2000"
-                    className="w-full max-w-xs rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-white"
+                    className="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-white"
                     value={form.period_year}
                     onChange={(e) => setForm((prev) => ({ ...prev, period_year: e.target.value }))}
                     onFocus={focusSelectAll}
@@ -269,7 +269,7 @@ export default function MyBills() {
                   <input
                     type="number"
                     step="0.01"
-                    className="w-full max-w-xs rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-white"
+                    className="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-white"
                     value={form.fixed_unit}
                     onChange={(e) => setForm((prev) => ({ ...prev, fixed_unit: e.target.value }))}
                     onFocus={focusSelectAll}
@@ -280,7 +280,7 @@ export default function MyBills() {
                   <input
                     type="number"
                     step="0.01"
-                    className="w-full max-w-xs rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-white"
+                    className="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-white"
                     value={form.fixed_unit_price}
                     onChange={(e) => setForm((prev) => ({ ...prev, fixed_unit_price: e.target.value }))}
                     onFocus={focusSelectAll}
@@ -291,7 +291,7 @@ export default function MyBills() {
                   <input
                     type="number"
                     step="0.01"
-                    className="w-full max-w-xs rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-white"
+                    className="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-white"
                     value={form.energy_unit}
                     onChange={(e) => setForm((prev) => ({ ...prev, energy_unit: e.target.value }))}
                     onFocus={focusSelectAll}
@@ -302,7 +302,7 @@ export default function MyBills() {
                   <input
                     type="number"
                     step="0.01"
-                    className="w-full max-w-xs rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-white"
+                    className="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-white"
                     value={form.energy_unit_price}
                     onChange={(e) => setForm((prev) => ({ ...prev, energy_unit_price: e.target.value }))}
                     onFocus={focusSelectAll}
@@ -313,7 +313,7 @@ export default function MyBills() {
                   <input
                     type="number"
                     step="0.01"
-                    className="w-full max-w-xs rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-white"
+                    className="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-white"
                     value={form.extra_charge}
                     onChange={(e) => setForm((prev) => ({ ...prev, extra_charge: e.target.value }))}
                     onFocus={focusSelectAll}
@@ -324,7 +324,7 @@ export default function MyBills() {
                   <input
                     type="number"
                     step="0.01"
-                    className="w-full max-w-xs rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-white"
+                    className="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-white"
                     value={form.extra_unit_price}
                     onChange={(e) => setForm((prev) => ({ ...prev, extra_unit_price: e.target.value }))}
                     onFocus={focusSelectAll}
@@ -336,7 +336,7 @@ export default function MyBills() {
                   <input
                     type="number"
                     step="0.01"
-                    className="w-full max-w-xs rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-white"
+                    className="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-white"
                     value={form.tax_percent}
                     onChange={(e) => setForm((prev) => ({ ...prev, tax_percent: e.target.value }))}
                     onFocus={focusSelectAll}
@@ -348,7 +348,7 @@ export default function MyBills() {
                   <input
                     type="number"
                     step="0.01"
-                    className="w-full max-w-xs rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-white"
+                    className="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-white"
                     value={form.interest_charge}
                     onChange={(e) => setForm((prev) => ({ ...prev, interest_charge: e.target.value }))}
                     onFocus={focusSelectAll}
@@ -359,7 +359,7 @@ export default function MyBills() {
                   <input
                     type="number"
                     step="0.01"
-                    className="w-full max-w-xs rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-white"
+                    className="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-white"
                     value={form.other_charge}
                     onChange={(e) => setForm((prev) => ({ ...prev, other_charge: e.target.value }))}
                     onFocus={focusSelectAll}

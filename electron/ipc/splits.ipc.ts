@@ -1,8 +1,10 @@
-import { ipcMain } from 'electron';
+import { BrowserWindow, ipcMain } from 'electron';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { calculateSplit } from '../services/split.service';
 import { execute, queryAll, queryOne, transaction } from '../db/client';
 import { dialog, shell } from 'electron';
-import { exportTenantBillPdfs } from '../services/pdf.service';
+import { exportTenantBillPdfs, generateTenantBillPdf, printTenantBillPdfs } from '../services/pdf.service';
 import type { SplitBillInput } from '../../src/types';
 
 export function registerSplitsIpc() {
@@ -135,4 +137,30 @@ export function registerSplitsIpc() {
     await shell.openPath(exportResult.folderPath).catch(() => undefined);
     return { ok: true as const, ...exportResult };
   });
+  ipcMain.handle('splits:downloadRows', async (event, splitId: number, tenantBillIds: number[]) => {
+    const owner = BrowserWindow.fromWebContents(event.sender);
+    if (tenantBillIds.length === 1) {
+      const row = await queryOne<any>(`SELECT tb.*, t.name AS tenant_name, t.room_no, t.phone FROM tenant_bills tb INNER JOIN tenants t ON t.id = tb.tenant_id WHERE tb.id = ? AND tb.bill_split_id = ?`, [tenantBillIds[0], splitId]);
+      if (!row) throw new Error('Selected invoice was not found');
+      const generated = await generateTenantBillPdf(splitId, row);
+      const options = { title: 'Save tenant invoice PDF', defaultPath: path.basename(generated.filePath), filters: [{ name: 'PDF', extensions: ['pdf'] }] };
+      const result = owner ? await dialog.showSaveDialog(owner, options) : await dialog.showSaveDialog(options);
+      if (result.canceled || !result.filePath) return { ok: false as const, canceled: true as const };
+      await fs.copyFile(generated.filePath, result.filePath);
+      await fs.unlink(generated.filePath).catch(() => undefined);
+      return { ok: true as const, filePath: result.filePath, fileCount: 1 };
+    }
+    const options = {
+      properties: ['openDirectory', 'createDirectory'],
+      title: 'Choose a folder for selected invoice PDFs',
+    } as const;
+    const result = owner ? await dialog.showOpenDialog(owner, options) : await dialog.showOpenDialog(options);
+    if (result.canceled || result.filePaths.length === 0) return { ok: false as const, canceled: true as const };
+    const exportResult = await exportTenantBillPdfs(splitId, result.filePaths[0], tenantBillIds);
+    await shell.openPath(exportResult.folderPath).catch(() => undefined);
+    return { ok: true as const, ...exportResult };
+  });
+  ipcMain.handle('splits:printRows', async (_event, splitId: number, tenantBillIds?: number[]) =>
+    printTenantBillPdfs(splitId, tenantBillIds),
+  );
 }

@@ -55,6 +55,7 @@ The app has two practical runtime modes:
 
 `npm run dev` starts the Electron app through `electron-vite`.
 The browser window loads the renderer bundle and receives `window.api` from the preload script.
+Main-process and preload API changes require every running Billify window/process to be closed and the desktop app reopened; renderer hot reload alone cannot replace the already-loaded preload bridge. Bill Split row actions detect a stale bridge and show this restart instruction instead of invoking a missing API method.
 
 ### Chrome renderer mode
 
@@ -98,7 +99,7 @@ It loads the session through `window.api.auth.getSession()` and renders:
 
 ### Layout and navigation
 
-`src/components/Layout.tsx` provides an icon-based sidebar that can collapse to a compact rail, plus the page shell, breadcrumbs, signed-in user header, and logout action.
+`src/components/Layout.tsx` provides an icon-based sidebar that can collapse to a compact rail, plus the page shell, breadcrumbs, signed-in user header, logout action, and consistent bottom content padding.
 It conditionally shows admin links when `session.role === 'admin'`.
 
 ### Route guard
@@ -116,12 +117,12 @@ It conditionally shows admin links when `session.role === 'admin'`.
 - `src/pages/Dashboard.tsx`: informative landing page with live billing metrics, payment progress, recent payments, top consumers, and tenant payment attention cards in a compact overview layout
 - `src/pages/Tenants.tsx`: create, edit, and list tenants in natural ascending room-number order; hide inactive rows by default with a Show deleted toggle; open tenant bill history; export active tenants to a multi-page four-column meter-reading PDF table (`Rm No`, `Name`, `Old`, `New`); download a formatted Excel import template; validate uploaded `.xlsx` rows; and bulk-create valid tenants while reporting row-level errors
 - `src/pages/TenantBills.tsx`: show one tenant's combined invoices in a single table with separate electricity and management fee totals, payable and payment state, reminder actions, direct Paid/Unpay toggles, and payment dates
-- `src/pages/MyBills.tsx`: create and edit monthly bills in a modal, choose automatic or manual entry for new bills, list bills with split status, then navigate to splits
-- `src/pages/BillSplit.tsx`: enter readings, use automatic allocation or direct manual tenant charges, move spatially between editable grid inputs with all four arrow keys without incrementing numeric values, edit per-tenant maintenance/generator/management-extra fees, save drafts or finalize combined bills, show finalized electricity fees, management fees, combined payable and direct Paid/Unpay toggles, download combined invoice PDFs, send them through WhatsApp, and sync tenant present readings
+- `src/pages/MyBills.tsx`: create and edit monthly bills in a wide, viewport-bounded modal with a responsive three-column desktop form, choose automatic or manual entry for new bills, list bills with split status, then navigate to splits
+- `src/pages/BillSplit.tsx`: enter readings, keep Manual header inputs in one row, show live electricity/management/payable KPI cards in both modes, move spatially between editable grid inputs with all four arrow keys without incrementing numeric values, move Enter from a Present reading to the next tenant row's Present input, edit per-tenant maintenance/generator/management-extra fees, save drafts or finalize combined bills, print all invoices from finalization, select finalized rows for bulk Download/Print/Send, use viewport-positioned per-row Download/Send/Print menus that flip above near the bottom edge without changing table height, show combined payable and direct Paid/Unpay toggles, and sync tenant present readings
 - `src/pages/Management.tsx` and `src/pages/ManagementBatch.tsx`: legacy batch screens retained in source but no longer routed or shown in navigation
 - `src/pages/Payments.tsx`: ledger of paid combined invoices with invoice number, tenant, date, amount, and electricity/management collection summaries
 - `src/pages/Users.tsx`: admin user management with add/edit/delete modal actions
-- `src/pages/Settings.tsx`: company and WhatsApp configuration
+- `src/pages/Settings.tsx`: company and WhatsApp configuration; the reset-all-data danger-zone UI is currently hidden
 
 ## Desktop API Boundary
 
@@ -273,7 +274,7 @@ It verifies passwords with bcryptjs and returns a renderer-safe session object.
 `electron/services/tenant.service.ts` provides tenant bill history lookups, management bill lookups, and payment updates for the tenant detail page.
 `electron/services/management.service.ts` manages management batch creation, listing, and payment updates.
 `electron/services/payments.service.ts` returns paid combined tenant invoices with their split ID and electricity/management component amounts for the payments page. Legacy standalone management payments are excluded.
-`electron/services/pdf.service.ts` exports tenant and management bill PDFs into bill-period-named subfolders inside the folder selected by the user.
+`electron/services/pdf.service.ts` exports all or selected tenant PDFs into bill-period-named folders. Single-row downloads use a Save As dialog, while multi-row downloads use a folder picker. Native printing builds one A4, page-broken printable invoice document for all requested tenant rows and invokes Electron printing on that normal HTML page instead of Chromium's unreliable PDF-viewer surface. The service also exports legacy management bill PDFs.
 
 The split flow is:
 
@@ -284,7 +285,7 @@ The split flow is:
 5. Sync each tenant's `present_reading` back to `tenants` so the next month can reuse it as the previous reading.
 6. On finalize, persist tenant bill rows with default `pending` payment status.
 
-Manual bills start with only a billing period. Their split screen owns the reading date and global tax, consumed-unit price, and fixed-unit price inputs. Global values propagate to every tenant row, after which Used, Consumed Price, Consumed Charge, Fixed Unit, Fixed Unit Price, Fixed, Extra, Tax, Interest, and Other can be overridden per row. Both Auto and Manual rows populate Maintenance and Generator from tenant defaults and allow Maintenance, Generator, and management Extra Fee edits. The calculated totals show the electricity subtotal, management total, and combined payable. Saving persists all row-level prices, overrides, and management fees; manual saves also write calculated aggregate totals back to the bill header and retain `entry_mode = 'manual'`.
+Manual bills start with only a billing period. Their split screen owns the reading date and global tax, consumed-unit price, and fixed-unit price inputs. Global values propagate to every tenant row, after which Used, Consumed Price, Consumed Charge, Fixed Unit, Fixed Unit Price, Fixed, Tax, Interest, and Other can be overridden per row. In the tenant grid, Tax is grouped with Interest and Other under Additional; there is no separate Charges column or per-row Extra input. Both Auto and Manual rows populate Maintenance and Generator from tenant defaults and allow Maintenance, Generator, and management Extra Fee edits. The calculated totals show the electricity subtotal, management total, and combined payable. Saving persists all row-level prices, overrides, and management fees; manual saves also write calculated aggregate totals back to the bill header and retain `entry_mode = 'manual'`.
 
 ### WhatsApp
 

@@ -70,7 +70,7 @@ export default function Settings({ onSessionChange }: { onSessionChange: (sessio
         Save settings
       </button>
 
-      <div className="space-y-3 rounded-3xl border border-rose-400/30 bg-rose-500/5 p-5">
+      {false ? <div className="space-y-3 rounded-3xl border border-rose-400/30 bg-rose-500/5 p-5">
         <div>
           <div className="text-sm font-semibold text-rose-200">Danger zone</div>
           <p className="mt-1 text-sm text-slate-400">
@@ -86,7 +86,7 @@ export default function Settings({ onSessionChange }: { onSessionChange: (sessio
         >
           {resetting ? 'Resetting…' : 'Reset all data'}
         </button>
-      </div>
+      </div> : null}
     </div>
   );
 }

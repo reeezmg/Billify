@@ -85,9 +85,24 @@ const getPaymentStatusClass = (status: string) =>
     : 'bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/20';
 
 const moveSplitInputFocus = (event: KeyboardEvent<HTMLDivElement>) => {
-  if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) return;
   const current = event.target;
   if (!(current instanceof HTMLInputElement)) return;
+
+  if (event.key === 'Enter' && current.dataset.splitInput === 'present') {
+    event.preventDefault();
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    const presentInputs = Array.from(
+      event.currentTarget.querySelectorAll<HTMLInputElement>('input[data-split-input="present"]:not([disabled])'),
+    ).filter((input) => input.offsetParent !== null);
+    const next = presentInputs[presentInputs.indexOf(current) + 1];
+    if (next) {
+      next.focus();
+      next.select();
+    }
+    return;
+  }
+
+  if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) return;
   event.preventDefault();
   if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
 
@@ -121,10 +136,12 @@ function EmptyableNumberInput({
   value,
   onChange,
   className,
+  inputRole,
 }: {
   value: number;
   onChange: (value: number) => void;
   className: string;
+  inputRole?: string;
 }) {
   const [draft, setDraft] = useState(String(value));
   const focused = useRef(false);
@@ -138,6 +155,7 @@ function EmptyableNumberInput({
       className={className}
       type="number"
       step="0.01"
+      data-split-input={inputRole}
       value={draft}
       onFocus={() => {
         focused.current = true;
@@ -168,7 +186,11 @@ export default function BillSplit() {
   const [editingCell, setEditingCell] = useState<EditingCell>(null);
   const [isFinalizeModalOpen, setIsFinalizeModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [modalAction, setModalAction] = useState<'save' | 'download' | 'send' | null>(null);
+  const [modalAction, setModalAction] = useState<'save' | 'download' | 'send' | 'print' | null>(null);
+  const [selectedBillIds, setSelectedBillIds] = useState<number[]>([]);
+  const [openActionId, setOpenActionId] = useState<number | null>(null);
+  const [actionMenuPosition, setActionMenuPosition] = useState({ top: 0, left: 0 });
+  const [rowAction, setRowAction] = useState<string | null>(null);
   const [exportMessage, setExportMessage] = useState<string | null>(null);
   const [reminder, setReminder] = useState<ReminderState>({
     open: false,
@@ -722,6 +744,55 @@ export default function BillSplit() {
     }
   };
 
+  const handlePrint = async () => {
+    if (!split || !bill) return;
+    setModalAction('print');
+    try {
+      if (typeof window.api.splits.printRows !== 'function') {
+        throw new Error('Billify was updated while it was open. Close every Billify window and reopen the desktop app to enable printing.');
+      }
+      await persistSplit('finalized', { trackSubmit: false });
+      await window.api.splits.printRows(split.id);
+      setIsFinalizeModalOpen(false);
+    } catch (error: any) {
+      setExportMessage(error?.message ?? 'Unable to open the print window.');
+    } finally {
+      setModalAction(null);
+    }
+  };
+
+  const runRowAction = async (action: 'download' | 'print' | 'send', ids: number[]) => {
+    if (!split || !ids.length) return;
+    setRowAction(action);
+    setOpenActionId(null);
+    try {
+      if (action === 'download') {
+        if (typeof window.api.splits.downloadRows !== 'function') {
+          throw new Error('Billify was updated while it was open. Close every Billify window and reopen the desktop app to enable downloads.');
+        }
+        const result = await window.api.splits.downloadRows(split.id, ids);
+        setExportMessage(result?.canceled ? 'Download canceled.' : `Downloaded ${result?.fileCount ?? ids.length} invoice PDF${ids.length === 1 ? '' : 's'}.`);
+      }
+      if (action === 'print') {
+        if (typeof window.api.splits.printRows !== 'function') {
+          throw new Error('Billify was updated while it was open. Close every Billify window and reopen the desktop app to enable printing.');
+        }
+        await window.api.splits.printRows(split.id, ids);
+      }
+      if (action === 'send') {
+        if (typeof window.api.whatsapp.sendRows !== 'function') {
+          throw new Error('Billify was updated while it was open. Close every Billify window and reopen the desktop app to enable sending.');
+        }
+        const result = await window.api.whatsapp.sendRows(split.id, ids);
+        setExportMessage(result?.ok === false ? 'One or more invoices could not be sent.' : `Sent ${ids.length} invoice${ids.length === 1 ? '' : 's'}.`);
+      }
+    } catch (error: any) {
+      setExportMessage(error?.message ?? `${action} failed. Please try again.`);
+    } finally {
+      setRowAction(null);
+    }
+  };
+
   const modalBusy = modalAction !== null;
 
   return (
@@ -736,7 +807,7 @@ export default function BillSplit() {
         <div className="space-y-4">
           {isManual ? (
             <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
+              <div className="grid grid-cols-7 gap-3">
                 <div>
                   <div className="text-xs text-slate-400">Bill period</div>
                   <div className="mt-2 text-sm text-white">{bill.period_month}/{bill.period_year}</div>
@@ -909,6 +980,23 @@ export default function BillSplit() {
         </div>
       ) : null}
 
+      {bill ? (
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="rounded-3xl border border-cyan-400/20 bg-cyan-400/5 p-5">
+            <div className="text-sm text-slate-400">Total electricity bill</div>
+            <div className="mt-2 text-2xl font-semibold text-cyan-200">Rs {(calc?.totals.electricity_total ?? 0).toFixed(2)}</div>
+          </div>
+          <div className="rounded-3xl border border-violet-400/20 bg-violet-400/5 p-5">
+            <div className="text-sm text-slate-400">Total management bill</div>
+            <div className="mt-2 text-2xl font-semibold text-violet-200">Rs {(calc?.totals.management_total ?? 0).toFixed(2)}</div>
+          </div>
+          <div className="rounded-3xl border border-emerald-400/20 bg-emerald-400/5 p-5">
+            <div className="text-sm text-slate-400">Total payable</div>
+            <div className="mt-2 text-2xl font-semibold text-emerald-200">Rs {(calc?.totals.payable ?? 0).toFixed(2)}</div>
+          </div>
+        </div>
+      ) : null}
+
       {isFinalizeModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 backdrop-blur-sm">
           <div className="w-full max-w-lg rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/40">
@@ -917,10 +1005,10 @@ export default function BillSplit() {
               Finalizing this bill will create tenant bills for all active tenants. You can finalize only, download all tenant
               bills into a folder, or send them directly through WhatsApp.
             </p>
-            <div className="mt-6 flex flex-wrap justify-end gap-3">
+            <div className="mt-6 flex flex-nowrap items-center justify-end gap-2">
               <button
                 type="button"
-                className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-white transition hover:bg-white/10"
+                className="mr-auto rounded-xl bg-red-600 px-4 py-2 text-white transition hover:bg-red-500 disabled:opacity-70"
                 onClick={() => setIsFinalizeModalOpen(false)}
                 disabled={modalBusy}
               >
@@ -928,7 +1016,15 @@ export default function BillSplit() {
               </button>
               <button
                 type="button"
-                className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-4 py-2 text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-70"
+                className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2 text-white transition hover:bg-violet-500 disabled:opacity-70"
+                onClick={handlePrint}
+                disabled={modalBusy}
+              >
+                {modalAction === 'print' ? 'Opening print...' : 'Print'}
+              </button>
+              <button
+                type="button"
+                className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-70"
                 onClick={async () => {
                   setModalAction('save');
                   try {
@@ -945,7 +1041,7 @@ export default function BillSplit() {
               </button>
               <button
                 type="button"
-                className="inline-flex items-center gap-2 rounded-xl bg-slate-800 px-4 py-2 text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-70"
+                className="inline-flex items-center gap-2 rounded-xl bg-cyan-600 px-4 py-2 text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-70"
                 onClick={handleDownload}
                 disabled={modalBusy}
               >
@@ -973,14 +1069,13 @@ export default function BillSplit() {
         <table className="w-full table-fixed text-left text-[11px]">
           <thead className="bg-white/5 text-slate-300">
             <tr>
-              <th className="w-[9%] border-r border-white/20 px-2 py-3">Details</th>
-              <th className="w-[10%] border-r border-white/20 px-2 py-3">Readings</th>
-              <th className="w-[12%] border-r border-white/20 px-2 py-3">Consumed</th>
-              <th className="w-[12%] border-r border-white/20 px-2 py-3">Fixed</th>
-              <th className="w-[12%] border-r border-white/20 px-2 py-3">Extra Unit</th>
-              <th className="w-[9%] border-r border-white/20 px-2 py-3">Charges</th>
-              <th className="w-[9%] border-r border-white/20 px-2 py-3">Additional</th>
-              <th className="w-[14%] border-r border-white/20 px-2 py-3">Management</th>
+              <th className="w-[10%] border-r border-white/20 px-2 py-3">Details</th>
+              <th className="w-[11%] border-r border-white/20 px-2 py-3">Readings</th>
+              <th className="w-[13%] border-r border-white/20 px-2 py-3">Consumed</th>
+              <th className="w-[13%] border-r border-white/20 px-2 py-3">Fixed</th>
+              <th className="w-[13%] border-r border-white/20 px-2 py-3">Extra Unit</th>
+              <th className="w-[12%] border-r border-white/20 px-2 py-3">Additional</th>
+              <th className="w-[15%] border-r border-white/20 px-2 py-3">Management</th>
               <th className="w-[13%] bg-emerald-400/10 px-2 py-3 text-emerald-100">Totals</th>
             </tr>
           </thead>
@@ -1002,7 +1097,7 @@ export default function BillSplit() {
                   <td className="min-w-0 border-r border-white/10 px-2 py-3">
                     <div className="space-y-3">
                       {field('Previous', <EmptyableNumberInput className="w-full rounded-lg border border-white/10 bg-slate-950 px-2 py-1 text-white" value={src.previous_reading} onChange={(value) => updateRow(src.tenant_id, 'previous_reading', value)} />)}
-                      {field('Present', <EmptyableNumberInput className="w-full rounded-lg border border-white/10 bg-slate-950 px-2 py-1 text-white" value={src.present_reading} onChange={(value) => updateRow(src.tenant_id, 'present_reading', value)} />)}
+                      {field('Present', <EmptyableNumberInput inputRole="present" className="w-full rounded-lg border border-white/10 bg-slate-950 px-2 py-1 text-white" value={src.present_reading} onChange={(value) => updateRow(src.tenant_id, 'present_reading', value)} />)}
                     </div>
                   </td>
                   <td className="min-w-0 border-r border-white/10 px-2 py-3">
@@ -1028,12 +1123,7 @@ export default function BillSplit() {
                   </td>
                   <td className="min-w-0 border-r border-white/10 px-2 py-3">
                     <div className="space-y-3">
-                      {field('Extra', isManual ? renderManualChargeInput(src, 'extra_adjust') : renderChargeCell(src, row, 'extra_adjust'))}
                       {field('Tax', isManual ? manualNumberInput(row.tax, (value) => updateRow(src.tenant_id, 'tax_adjust', Number((value - (row.tax - src.tax_adjust)).toFixed(2)))) : <span className="text-white">{row.tax.toFixed(2)}</span>)}
-                    </div>
-                  </td>
-                  <td className="min-w-0 border-r border-white/10 px-2 py-3">
-                    <div className="space-y-3">
                       {field('Interest', isManual ? renderManualChargeInput(src, 'interest_adjust') : renderChargeCell(src, row, 'interest_adjust'))}
                       {field('Other', isManual ? renderManualChargeInput(src, 'other_adjust') : renderChargeCell(src, row, 'other_adjust'))}
                     </div>
@@ -1058,7 +1148,7 @@ export default function BillSplit() {
           </tbody>
           <tfoot className="border-t border-white/10 bg-white/5 text-white">
             <tr>
-              <td className="px-3 py-3 text-right font-semibold text-slate-300" colSpan={8}>Total Payable</td>
+              <td className="px-3 py-3 text-right font-semibold text-slate-300" colSpan={7}>Total Payable</td>
               <td className="bg-emerald-400/10 px-3 py-3 font-semibold text-emerald-100">Rs {(calc?.totals.payable ?? 0).toFixed(2)}</td>
             </tr>
           </tfoot>
@@ -1103,10 +1193,27 @@ export default function BillSplit() {
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-3xl border border-white/10 bg-white/5">
+          <div className="rounded-3xl border border-white/10 bg-white/5">
+            {selectedBillIds.length ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
+                <span className="text-sm text-slate-300">{selectedBillIds.length} selected</span>
+                <div className="flex gap-2">
+                  <button className="rounded-lg bg-cyan-600 px-3 py-2 text-xs text-white transition hover:bg-cyan-500 disabled:opacity-60" disabled={Boolean(rowAction)} onClick={() => void runRowAction('download', selectedBillIds)}>Download</button>
+                  <button className="rounded-lg bg-violet-600 px-3 py-2 text-xs text-white transition hover:bg-violet-500 disabled:opacity-60" disabled={Boolean(rowAction)} onClick={() => void runRowAction('print', selectedBillIds)}>Print</button>
+                  <button className="rounded-lg bg-brand-500 px-3 py-2 text-xs text-white transition hover:bg-brand-400 disabled:opacity-60" disabled={Boolean(rowAction)} onClick={() => void runRowAction('send', selectedBillIds)}>Send</button>
+                </div>
+              </div>
+            ) : null}
             <table className="w-full text-left text-sm">
               <thead className="bg-white/5 text-slate-300">
                 <tr>
+                  <th className="w-10 px-3 py-3">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(finalizedRows.length) && finalizedRows.every((row) => row.id && selectedBillIds.includes(row.id))}
+                      onChange={(event) => setSelectedBillIds(event.target.checked ? finalizedRows.flatMap((row) => row.id ? [row.id] : []) : [])}
+                    />
+                  </th>
                   <th className="px-4 py-3">Tenant name (Room)</th>
                   <th className="px-4 py-3">Period</th>
                   <th className="px-4 py-3">Electricity fees</th>
@@ -1116,6 +1223,7 @@ export default function BillSplit() {
                   <th className="px-4 py-3">Payment date</th>
                   <th className="px-4 py-3">Reminder</th>
                   <th className="px-4 py-3">Payment update</th>
+                  <th className="w-16 px-4 py-3">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -1123,6 +1231,14 @@ export default function BillSplit() {
                   const canRemind = row.payment_status !== 'paid' && Boolean(row.phone);
                   return (
                     <tr key={row.tenant_id} className="border-t border-white/10">
+                      <td className="px-3 py-3">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(row.id && selectedBillIds.includes(row.id))}
+                          disabled={!row.id}
+                          onChange={(event) => row.id && setSelectedBillIds((current) => event.target.checked ? [...current, row.id!] : current.filter((id) => id !== row.id))}
+                        />
+                      </td>
                       <td className="px-4 py-3">
                         <span className="block truncate" title={row.tenant_name}>
                           {row.tenant_name} ({row.room_no})
@@ -1162,6 +1278,38 @@ export default function BillSplit() {
                         >
                           {paymentUpdatingId === row.id ? 'Saving...' : row.payment_status === 'paid' ? 'Unpay' : 'Paid'}
                         </button>
+                      </td>
+                      <td className="px-4 py-3">
+                        <button
+                          className="rounded-lg bg-white/10 px-3 py-1.5 text-lg leading-none text-white"
+                          onClick={(event) => {
+                            if (!row.id) return;
+                            if (openActionId === row.id) {
+                              setOpenActionId(null);
+                              return;
+                            }
+                            const rect = event.currentTarget.getBoundingClientRect();
+                            const menuWidth = 128;
+                            const menuHeight = 112;
+                            const margin = 8;
+                            const openBelow = window.innerHeight - rect.bottom >= menuHeight + margin;
+                            setActionMenuPosition({
+                              top: openBelow ? rect.bottom + 6 : Math.max(margin, rect.top - menuHeight - 6),
+                              left: Math.min(window.innerWidth - menuWidth - margin, Math.max(margin, rect.right - menuWidth)),
+                            });
+                            setOpenActionId(row.id);
+                          }}
+                        >...</button>
+                        {row.id && openActionId === row.id ? (
+                          <div
+                            className="fixed z-50 w-32 rounded-xl border border-white/10 bg-slate-900 p-1 shadow-2xl"
+                            style={{ top: actionMenuPosition.top, left: actionMenuPosition.left }}
+                          >
+                            <button className="block w-full rounded-lg bg-cyan-600/20 px-3 py-2 text-left text-xs text-cyan-200 hover:bg-cyan-600/35" onClick={() => void runRowAction('download', [row.id!])}>Download</button>
+                            <button className="mt-1 block w-full rounded-lg bg-brand-500/20 px-3 py-2 text-left text-xs text-emerald-200 hover:bg-brand-500/35" onClick={() => void runRowAction('send', [row.id!])}>Send</button>
+                            <button className="mt-1 block w-full rounded-lg bg-violet-600/20 px-3 py-2 text-left text-xs text-violet-200 hover:bg-violet-600/35" onClick={() => void runRowAction('print', [row.id!])}>Print</button>
+                          </div>
+                        ) : null}
                       </td>
                     </tr>
                   );

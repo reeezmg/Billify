@@ -1,4 +1,5 @@
 import { calculateSplit } from './calc';
+import { PDFDocument as MergePdfDocument } from 'pdf-lib';
 import {
   buildTenantBillPdfBytes,
   getBillPayDate,
@@ -1011,7 +1012,7 @@ export function createBrowserApi() {
       async saveDraft(payload: any) {
         persistSplit(payload);
       },
-      async downloadAll(splitId: number) {
+      async downloadAll(splitId: number, tenantBillIds?: number[]) {
         const state = getState();
         const split = state.splits.find((item) => item.id === splitId);
         if (!split) {
@@ -1030,7 +1031,8 @@ export function createBrowserApi() {
 
         const root = await picker.call(window, { mode: 'readwrite', startIn: 'downloads' });
         const folder = await root.getDirectoryHandle(getTenantBillFolderName(bill), { create: true });
-        for (const row of split.rows ?? []) {
+        const selectedRows = (split.rows ?? []).filter((row: any) => !tenantBillIds?.length || tenantBillIds.includes(row.id ?? tenantBillRowId(split.id, row.tenant_id)));
+        for (const row of selectedRows) {
           const pdfBytes = await buildTenantBillPdfBytes({
             settings: state.settings,
             bill: {
@@ -1054,7 +1056,29 @@ export function createBrowserApi() {
           await writable.close();
         }
 
-        return { ok: true as const, folderPath: `${root.name}/${getTenantBillFolderName(bill)}`, fileCount: (split.rows ?? []).length };
+        return { ok: true as const, folderPath: `${root.name}/${getTenantBillFolderName(bill)}`, fileCount: selectedRows.length };
+      },
+      async downloadRows(splitId: number, tenantBillIds: number[]) {
+        return (this as any).downloadAll(splitId, tenantBillIds);
+      },
+      async printRows(splitId: number, tenantBillIds?: number[]) {
+        const state = getState();
+        const split = state.splits.find((item) => item.id === splitId);
+        const bill = split && state.bills.find((item) => item.id === split.bill_id);
+        if (!split || !bill) throw new Error('Split not found');
+        const rows = (split.rows ?? []).filter((row: any) => !tenantBillIds?.length || tenantBillIds.includes(row.id ?? tenantBillRowId(split.id, row.tenant_id)));
+        const merged = await MergePdfDocument.create();
+        for (const row of rows) {
+          const bytes = await buildTenantBillPdfBytes({ settings: state.settings, bill, split, row });
+          const source = await MergePdfDocument.load(bytes);
+          const pages = await merged.copyPages(source, source.getPageIndices());
+          pages.forEach((page) => merged.addPage(page));
+        }
+        const url = URL.createObjectURL(new Blob([await merged.save()], { type: 'application/pdf' }));
+        const printWindow = window.open(url, '_blank');
+        setTimeout(() => printWindow?.print(), 900);
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        return { ok: true as const, fileCount: rows.length };
       },
     },
     users: {
@@ -1122,7 +1146,7 @@ export function createBrowserApi() {
       async previewPdf() {
         return 'browser://preview';
       },
-      async sendAll(splitId?: number) {
+      async sendAll(splitId?: number, tenantBillIds?: number[]) {
         if (!splitId) {
           return { ok: true };
         }
@@ -1143,7 +1167,7 @@ export function createBrowserApi() {
         }
 
         const results: Array<{ tenant_id: number; ok: boolean; message?: string }> = [];
-        for (const row of split.rows) {
+        for (const row of split.rows.filter((row: any) => !tenantBillIds?.length || tenantBillIds.includes(row.id ?? tenantBillRowId(split.id, row.tenant_id)))) {
           const tenant = state.tenants.find((item) => item.id === row.tenant_id);
           const currentPhone = tenant?.phone ?? row.phone;
           const currentTenantName = tenant?.name ?? row.tenant_name;
@@ -1225,6 +1249,9 @@ export function createBrowserApi() {
         }
 
         return { ok: results.some((item) => item.ok), results };
+      },
+      async sendRows(splitId: number, tenantBillIds: number[]) {
+        return (this as any).sendAll(splitId, tenantBillIds);
       },
       async sendReminder(tenantBillId?: number) {
         if (!tenantBillId) {

@@ -65,6 +65,8 @@ const api = {
     save: (payload: any) => ipcRenderer.invoke('splits:save', payload),
     saveDraft: (payload: any) => ipcRenderer.invoke('splits:saveDraft', payload),
     downloadAll: (splitId: number) => ipcRenderer.invoke('splits:downloadAll', splitId),
+    downloadRows: (splitId: number, tenantBillIds: number[]) => ipcRenderer.invoke('splits:downloadRows', splitId, tenantBillIds),
+    printRows: (splitId: number, tenantBillIds?: number[]) => ipcRenderer.invoke('splits:printRows', splitId, tenantBillIds),
   },
   users: {
     list: () => ipcRenderer.invoke('users:list'),
@@ -78,6 +80,7 @@ const api = {
   whatsapp: {
     previewPdf: (splitId: number, tenantBillId: number) => ipcRenderer.invoke('whatsapp:previewPdf', splitId, tenantBillId) as Promise<string>,
     sendAll: (splitId: number) => ipcRenderer.invoke('whatsapp:sendAll', splitId),
+    sendRows: (splitId: number, tenantBillIds: number[]) => ipcRenderer.invoke('whatsapp:sendRows', splitId, tenantBillIds),
     sendReminder: (tenantBillId: number) => ipcRenderer.invoke('whatsapp:sendReminder', tenantBillId),
   },
   settings: {

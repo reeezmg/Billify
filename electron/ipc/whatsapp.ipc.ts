@@ -18,7 +18,7 @@ export function registerWhatsappIpc() {
     const result = await generateTenantBillPdf(splitId, row);
     return result.filePath;
   });
-  ipcMain.handle('whatsapp:sendAll', async (_event, splitId: number) => {
+  const sendRows = async (splitId: number, tenantBillIds?: number[]) => {
     const split = await queryOne<any>(
       'SELECT bs.*, b.period_month, b.period_year, b.fixed_unit, b.fixed_unit_price, b.energy_unit_price, b.tax_percent FROM bill_splits bs INNER JOIN bills b ON b.id = bs.bill_id WHERE bs.id = ?',
       [splitId],
@@ -32,8 +32,9 @@ export function registerWhatsappIpc() {
        WHERE tb.bill_split_id = ? AND t.active = 1 AND t.phone IS NOT NULL AND t.phone <> ''`,
       [splitId],
     );
+    const selectedRows = rows.filter((row) => !tenantBillIds?.length || tenantBillIds.includes(row.id));
     const results: Array<{ tenant_id: number; ok: boolean; message?: string }> = [];
-    for (const row of rows) {
+    for (const row of selectedRows) {
       try {
         const pdf = await generateTenantBillPdf(splitId, row);
         const media = await uploadMedia({
@@ -69,7 +70,9 @@ export function registerWhatsappIpc() {
     }
     await execute('UPDATE bill_splits SET status = ? WHERE id = ?', ['sent', splitId]);
     return results;
-  });
+  };
+  ipcMain.handle('whatsapp:sendAll', async (_event, splitId: number) => sendRows(splitId));
+  ipcMain.handle('whatsapp:sendRows', async (_event, splitId: number, tenantBillIds: number[]) => sendRows(splitId, tenantBillIds));
   ipcMain.handle('whatsapp:sendReminder', async (_event, tenantBillId: number) => {
     const row = await queryOne<any>(
       `SELECT tb.*, t.name as tenant_name, t.room_no, t.phone, b.period_month, b.period_year

@@ -129,7 +129,7 @@ export default function Layout({ session, onSessionChange, children }: Props) {
             </button>
           </div>
         </header>
-        <div className={`min-w-0 flex-1 ${isSplitPage ? 'p-3' : 'p-5'}`}>{children}</div>
+        <div className={`min-w-0 flex-1 ${isSplitPage ? 'px-3 pt-3 pb-10' : 'px-5 pt-5 pb-10'}`}>{children}</div>
       </main>
     </div>
   );
