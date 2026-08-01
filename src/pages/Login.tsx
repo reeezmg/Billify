@@ -21,7 +21,7 @@ export default function Login({ onSignedIn }: { onSignedIn: (session: SessionUse
             autoComplete="off"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="Email"
+            placeholder="Username"
           />
           <div className="relative">
             <input
@@ -63,7 +63,7 @@ export default function Login({ onSignedIn }: { onSignedIn: (session: SessionUse
             Sign in
           </button>
         </form>
-        <div className="mt-6 text-xs text-slate-500">Default seed: admin@local / admin</div>
+        <div className="mt-6 text-xs text-slate-500">Default login: admin / admin</div>
       </div>
     </div>
   );

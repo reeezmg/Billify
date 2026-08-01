@@ -71,4 +71,77 @@ describe('calculateSplit', () => {
     expect(result.reconciliation.interest_diff).toBe(2);
     expect(result.reconciliation.other_diff).toBe(-1);
   });
+
+  it('calculates manual row charges without proportional bill totals', () => {
+    const result = calculateSplit({
+      bill: { fixed_charge: 0, energy_charge: 0, energy_unit_price: 2, extra_charge: 0, tax: 0, interest_charge: 0, other_charge: 0 },
+      split: { tax_rate: 5 },
+      rows: [
+        {
+          tenant_id: 1,
+          previous_reading: 0,
+          present_reading: 110,
+          fixed_adjust: 30,
+          extra_adjust: 5,
+          interest_adjust: 2,
+          other_adjust: 1,
+        },
+      ],
+    });
+
+    expect(result.rows[0].consumed_unit).toBe(110);
+    expect(result.rows[0].energy_charge).toBe(220);
+    expect(result.rows[0].tax).toBe(12.75);
+    expect(result.rows[0].sub_total).toBe(267.75);
+    expect(result.rows[0].payable).toBe(270.75);
+  });
+
+  it('applies row-level energy prices, energy amounts, and tax overrides', () => {
+    const result = calculateSplit({
+      bill: { fixed_charge: 0, energy_charge: 0, energy_unit_price: 2, extra_charge: 0, tax: 0, interest_charge: 0, other_charge: 0 },
+      split: { tax_rate: 5 },
+      rows: [
+        {
+          tenant_id: 1,
+          previous_reading: 0,
+          present_reading: 100,
+          energy_unit_price: 3,
+          energy_adjust: 10,
+          fixed_adjust: 50,
+          extra_adjust: 5,
+          tax_adjust: 1.75,
+          interest_adjust: 2,
+          other_adjust: 1,
+        },
+      ],
+    });
+
+    expect(result.rows[0].energy_charge_calc).toBe(300);
+    expect(result.rows[0].energy_charge).toBe(310);
+    expect(result.rows[0].tax).toBe(20);
+    expect(result.rows[0].payable).toBe(388);
+  });
+
+  it('adds editable management fees after the electricity subtotal', () => {
+    const result = calculateSplit({
+      bill: { fixed_charge: 0, energy_charge: 0, energy_unit_price: 2, extra_charge: 0, tax: 0, interest_charge: 0, other_charge: 0 },
+      split: { tax_rate: 0 },
+      rows: [{
+        tenant_id: 1,
+        previous_reading: 0,
+        present_reading: 10,
+        fixed_adjust: 0,
+        extra_adjust: 0,
+        interest_adjust: 0,
+        maintenance_fee: 500,
+        generator_fee: 200,
+        management_extra_fee: 50,
+      }],
+    });
+
+    expect(result.rows[0].electricity_total).toBe(20);
+    expect(result.rows[0].management_total).toBe(750);
+    expect(result.rows[0].payable).toBe(770);
+    expect(result.totals.management_total).toBe(750);
+  });
 });

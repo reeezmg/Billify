@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS tenants (
 
 CREATE TABLE IF NOT EXISTS bills (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  entry_mode TEXT NOT NULL DEFAULT 'auto' CHECK(entry_mode IN ('auto', 'manual')),
   period_month INTEGER NOT NULL,
   period_year INTEGER NOT NULL,
   fixed_unit REAL NOT NULL,
@@ -39,8 +40,7 @@ CREATE TABLE IF NOT EXISTS bills (
   other_charge REAL NOT NULL DEFAULT 0,
   total REAL NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-  UNIQUE(period_month, period_year)
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS bill_splits (
@@ -61,16 +61,24 @@ CREATE TABLE IF NOT EXISTS tenant_bills (
   consumed_unit REAL NOT NULL,
   fixed_charge_calc REAL NOT NULL,
   fixed_adjust REAL NOT NULL DEFAULT 0,
+  fixed_unit REAL NOT NULL DEFAULT 0,
+  fixed_unit_price REAL NOT NULL DEFAULT 0,
+  energy_unit_price REAL NOT NULL DEFAULT 0,
   energy_charge REAL NOT NULL,
   energy_adjust REAL NOT NULL DEFAULT 0,
   extra_charge_calc REAL NOT NULL,
   extra_adjust REAL NOT NULL DEFAULT 0,
   tax REAL NOT NULL,
+  tax_adjust REAL NOT NULL DEFAULT 0,
   sub_total REAL NOT NULL,
   interest_charge_calc REAL NOT NULL,
   interest_adjust REAL NOT NULL DEFAULT 0,
   other_charge_calc REAL NOT NULL DEFAULT 0,
   other_adjust REAL NOT NULL DEFAULT 0,
+  maintenance_fee REAL NOT NULL DEFAULT 0,
+  generator_fee REAL NOT NULL DEFAULT 0,
+  management_extra_fee REAL NOT NULL DEFAULT 0,
+  management_total REAL NOT NULL DEFAULT 0,
   payment_status TEXT NOT NULL DEFAULT 'pending' CHECK(payment_status IN ('pending', 'paid')),
   payment_method TEXT CHECK(payment_method IN ('cash', 'upi', 'card')),
   payment_date TEXT,

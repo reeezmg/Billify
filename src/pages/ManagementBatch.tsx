@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { PaymentUpdateModal, ReminderModal } from '../components/billModals';
-import type { ManagementBatchDetail, ManagementTenantBillRow, PaymentMethod, PaymentStatus } from '../types';
+import type { ManagementBatchDetail, ManagementTenantBillRow, PaymentStatus } from '../types';
 
 type ReminderState = {
   open: boolean;
@@ -14,7 +14,6 @@ type PaymentState = {
   open: boolean;
   row: ManagementTenantBillRow | null;
   status: PaymentStatus;
-  method: PaymentMethod | '';
   paymentDate: string;
   saving: boolean;
   error: string | null;
@@ -42,7 +41,6 @@ export default function ManagementBatch() {
     open: false,
     row: null,
     status: 'pending',
-    method: '',
     paymentDate: todayIso(),
     saving: false,
     error: null,
@@ -95,7 +93,6 @@ export default function ManagementBatch() {
       open: true,
       row,
       status: row.payment_status,
-      method: row.payment_method ?? '',
       paymentDate: row.payment_date ?? todayIso(),
       saving: false,
       error: null,
@@ -107,7 +104,6 @@ export default function ManagementBatch() {
       open: false,
       row: null,
       status: 'pending',
-      method: '',
       paymentDate: todayIso(),
       saving: false,
       error: null,
@@ -121,7 +117,7 @@ export default function ManagementBatch() {
       await window.api.management.updateBillPayment(
         payment.row.id,
         payment.status,
-        payment.status === 'paid' ? (payment.method || null) : null,
+        null,
         payment.status === 'paid' ? payment.paymentDate : null,
       );
       closePayment();
@@ -140,7 +136,7 @@ export default function ManagementBatch() {
     : '';
 
   const paymentMessage = payment.row
-    ? `Change the payment status and method for the management bill of ${payment.row.period_month}/${payment.row.period_year}.`
+    ? `Change the payment status for the management bill of ${payment.row.period_month}/${payment.row.period_year}.`
     : '';
 
   return (
@@ -184,7 +180,6 @@ export default function ManagementBatch() {
               <th className="px-4 py-3">Generator</th>
               <th className="px-4 py-3">Total</th>
               <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Method</th>
               <th className="px-4 py-3">Payment date</th>
               <th className="px-4 py-3">Reminder</th>
               <th className="px-4 py-3">Payment update</th>
@@ -217,7 +212,6 @@ export default function ManagementBatch() {
                       {row.payment_status === 'paid' ? 'Paid' : 'Pending'}
                     </span>
                   </td>
-                  <td className="px-4 py-3">{row.payment_method ?? '-'}</td>
                   <td className="px-4 py-3">{formatDate(row.payment_date)}</td>
                   <td className="px-4 py-3">
                     {canRemind ? (
@@ -263,7 +257,6 @@ export default function ManagementBatch() {
         error={payment.error}
         busy={payment.saving}
         status={payment.status}
-        method={payment.method}
         paymentDate={payment.paymentDate}
         showPaymentDate
         onClose={closePayment}
@@ -272,11 +265,9 @@ export default function ManagementBatch() {
           setPayment((prev) => ({
             ...prev,
             status,
-            method: status === 'paid' ? prev.method : '',
             paymentDate: status === 'paid' ? prev.paymentDate : todayIso(),
           }))
         }
-        onMethodChange={(method) => setPayment((prev) => ({ ...prev, method }))}
         onPaymentDateChange={(paymentDate) => setPayment((prev) => ({ ...prev, paymentDate }))}
       />
     </div>

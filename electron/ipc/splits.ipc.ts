@@ -21,6 +21,11 @@ export function registerSplitsIpc() {
     return { split, bill, rows };
   });
   const persistSplit = async (_event: unknown, payload: any) => {
+    const splitId = Number(payload?.split_id);
+    if (!Number.isInteger(splitId) || splitId <= 0) {
+      throw new Error('Cannot save split: a valid split ID is required. Please reopen the bill and try again.');
+    }
+
     return transaction((db) => {
       const existingRows: Array<{
         tenant_id: number;
@@ -28,10 +33,10 @@ export function registerSplitsIpc() {
         payment_method: 'cash' | 'upi' | 'card' | null;
         payment_date: string | null;
       }> = [];
-      if (payload.split_id) {
+      if (splitId) {
         const stmt = db.prepare('SELECT tenant_id, payment_status, payment_method, payment_date FROM tenant_bills WHERE bill_split_id = ?');
         try {
-          stmt.bind([payload.split_id]);
+          stmt.bind([splitId]);
           while (stmt.step()) {
             existingRows.push(stmt.getAsObject() as {
               tenant_id: number;
@@ -45,46 +50,56 @@ export function registerSplitsIpc() {
         }
       }
       const existingPayments = new Map(existingRows.map((row) => [row.tenant_id, row]));
-      db.prepare('UPDATE bill_splits SET reading_date = ?, tax_rate = ?, status = ? WHERE id = ?').run(
+      db.prepare('UPDATE bill_splits SET reading_date = ?, tax_rate = ?, status = ? WHERE id = ?').run([
         payload.reading_date,
         payload.tax_rate,
         payload.status ?? 'draft',
-        payload.split_id,
-      );
-      db.prepare('DELETE FROM tenant_bills WHERE bill_split_id = ?').run(payload.split_id);
+        splitId,
+      ]);
+      db.prepare('DELETE FROM tenant_bills WHERE bill_split_id = ?').run([splitId]);
       const calculated = calculateSplit({ bill: payload.bill, split: { tax_rate: payload.tax_rate }, rows: payload.rows });
       const insert = db.prepare(
         `INSERT INTO tenant_bills
           (bill_split_id, tenant_id, previous_reading, present_reading, consumed_unit, fixed_charge_calc, fixed_adjust,
-           energy_charge, extra_charge_calc, extra_adjust, tax, sub_total, interest_charge_calc, interest_adjust,
-           other_charge_calc, other_adjust, payment_status, payment_method, payment_date, payable)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           fixed_unit, fixed_unit_price, energy_unit_price, energy_charge, energy_adjust, extra_charge_calc, extra_adjust, tax, tax_adjust, sub_total, interest_charge_calc, interest_adjust,
+           other_charge_calc, other_adjust, maintenance_fee, generator_fee, management_extra_fee, management_total,
+           payment_status, payment_method, payment_date, payable)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       for (const calc of calculated.rows) {
         const row = payload.rows.find((item: any) => item.tenant_id === calc.tenant_id);
         const payment = existingPayments.get(calc.tenant_id);
-        insert.run(
-          payload.split_id,
+        insert.run([
+          splitId,
           calc.tenant_id,
           calc.previous_reading,
           calc.present_reading,
           calc.consumed_unit,
           calc.fixed_charge_calc,
           row?.fixed_adjust ?? 0,
+          row?.fixed_unit ?? 0,
+          row?.fixed_unit_price ?? payload.bill.fixed_unit_price ?? 0,
+          row?.energy_unit_price ?? payload.bill.energy_unit_price ?? 0,
           calc.energy_charge,
+          row?.energy_adjust ?? 0,
           calc.extra_charge_calc,
           row?.extra_adjust ?? 0,
           calc.tax,
+          row?.tax_adjust ?? 0,
           calc.sub_total,
           calc.interest_charge_calc,
           row?.interest_adjust ?? 0,
           calc.other_charge_calc,
           row?.other_adjust ?? 0,
+          row?.maintenance_fee ?? 0,
+          row?.generator_fee ?? 0,
+          row?.management_extra_fee ?? 0,
+          calc.management_total,
           payment?.payment_status ?? 'pending',
           payment?.payment_method ?? null,
           payment?.payment_date ?? null,
           calc.payable,
-        );
+        ]);
       }
       return { ok: true };
     });

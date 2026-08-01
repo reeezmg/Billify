@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { Bill, PaymentMethod, Tenant, TenantBillHistory } from '../types';
+import type { Bill, Tenant, TenantBillHistory } from '../types';
 
 type DashboardStats = {
   bills: Bill[];
@@ -36,12 +36,6 @@ const statusStyle = (status: string | null | undefined) => {
     default:
       return { badge: 'bg-slate-500/15 text-slate-200 ring-1 ring-slate-500/30', dot: 'bg-slate-300', label: 'Draft' };
   }
-};
-
-const methodMeta: Record<PaymentMethod, { label: string; color: string }> = {
-  cash: { label: 'Cash', color: 'bg-emerald-400' },
-  upi: { label: 'UPI', color: 'bg-sky-400' },
-  card: { label: 'Card', color: 'bg-violet-400' },
 };
 
 export default function Dashboard() {
@@ -93,16 +87,6 @@ export default function Dashboard() {
 
     const paymentRate = tenantBills.length > 0 ? clampPercent((paid.length / tenantBills.length) * 100) : 0;
 
-    const methodCounts: Record<PaymentMethod, number> = { cash: 0, upi: 0, card: 0 };
-    let methodAmountTotal = 0;
-    const methodAmounts: Record<PaymentMethod, number> = { cash: 0, upi: 0, card: 0 };
-    paid.forEach((b) => {
-      const m = (b.payment_method ?? 'cash') as PaymentMethod;
-      methodCounts[m] = (methodCounts[m] ?? 0) + 1;
-      methodAmounts[m] = (methodAmounts[m] ?? 0) + b.payable;
-      methodAmountTotal += b.payable;
-    });
-
     const topPending = stats.histories
       .map((h) => {
         const p = h.bills.filter((b) => b.payment_status !== 'paid');
@@ -146,7 +130,6 @@ export default function Dashboard() {
             tenantName: h.tenant?.name ?? 'Tenant',
             roomNo: h.tenant?.room_no ?? '-',
             payable: b.payable,
-            method: (b.payment_method ?? 'cash') as PaymentMethod,
             paymentDate: b.payment_date,
             period_month: b.period_month,
             period_year: b.period_year,
@@ -167,9 +150,6 @@ export default function Dashboard() {
       totalEnergy,
       avgBill,
       paymentRate,
-      methodCounts,
-      methodAmounts,
-      methodAmountTotal,
       paidCount: paid.length,
       topPending,
       topConsumers,
@@ -195,7 +175,7 @@ export default function Dashboard() {
         <Card label="Avg bill" value={formatMoney(d.avgBill)} caption={`Across ${formatUnits(d.totalEnergy)} units billed`} loading={loading} />
       </section>
 
-      <section className="grid gap-2.5 lg:grid-cols-2">
+      <section>
         <ProgressCard
           label="Payment collection"
           value={`${d.paymentRate}%`}
@@ -203,7 +183,6 @@ export default function Dashboard() {
           percent={d.paymentRate}
           color="bg-brand-400"
         />
-        <PaymentMethodsCard loading={loading} counts={d.methodCounts} amounts={d.methodAmounts} total={d.methodAmountTotal} />
       </section>
 
       <section className="grid gap-3 md:grid-cols-2">
@@ -215,7 +194,7 @@ export default function Dashboard() {
           <div className="grid grid-cols-3 gap-3 p-4">
             <Stat label="Bill total" value={d.latest ? formatMoney(d.latest.total) : 'Rs 0.00'} />
             <Stat label="Tax rate" value={d.latest ? `${d.latest.tax_percent.toFixed(2)}%` : '0.00%'} />
-            <Stat label="Energy units" value={d.latest ? formatUnits(d.latest.energy_unit) : '0.00'} />
+            <Stat label="Consumed units" value={d.latest ? formatUnits(d.latest.energy_unit) : '0.00'} />
           </div>
          
         </Panel>
@@ -314,7 +293,6 @@ export default function Dashboard() {
           ) : d.recentPayments.length > 0 ? (
             <div className="divide-y divide-white/5">
               {d.recentPayments.map((item) => {
-                const meta = methodMeta[item.method];
                 return (
                   <Link
                     key={item.id}
@@ -327,11 +305,7 @@ export default function Dashboard() {
                         Room {item.roomNo} · {formatMonth(item.period_month)} {item.period_year} · {formatDate(item.paymentDate)}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 text-right">
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-white/5 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-300">
-                        <span className={`h-1.5 w-1.5 rounded-full ${meta.color}`} />
-                        {meta.label}
-                      </span>
+                    <div className="text-right">
                       <span className="text-sm font-semibold text-emerald-300">{formatMoney(item.payable)}</span>
                     </div>
                   </Link>
@@ -396,69 +370,6 @@ function ProgressCard({
         <div className={`h-full rounded-full transition-[width] duration-500 ${color}`} style={{ width: `${percent}%` }} />
       </div>
       <div className="mt-2 text-xs text-slate-400">{caption}</div>
-    </article>
-  );
-}
-
-function PaymentMethodsCard({
-  loading,
-  counts,
-  amounts,
-  total,
-}: {
-  loading: boolean;
-  counts: Record<PaymentMethod, number>;
-  amounts: Record<PaymentMethod, number>;
-  total: number;
-}) {
-  const methods: PaymentMethod[] = ['cash', 'upi', 'card'];
-  const totalCount = counts.cash + counts.upi + counts.card;
-
-  return (
-    <article className="rounded-2xl border border-white/10 bg-slate-950/35 p-4">
-      <div className="flex items-baseline justify-between gap-3">
-        <div className="text-xs uppercase tracking-wide text-slate-400">Payment methods</div>
-        <div className="text-sm text-slate-400">
-          {loading ? '—' : `${totalCount} ${totalCount === 1 ? 'payment' : 'payments'}`}
-        </div>
-      </div>
-
-      {loading ? (
-        <div className="mt-3 h-1.5 w-full animate-pulse rounded-full bg-white/10" />
-      ) : total > 0 ? (
-        <>
-          <div className="mt-3 flex h-1.5 overflow-hidden rounded-full bg-white/10">
-            {methods.map((m) => {
-              const pct = (amounts[m] / total) * 100;
-              if (pct <= 0) return null;
-              return (
-                <div
-                  key={m}
-                  className={`${methodMeta[m].color} h-full transition-[width] duration-500`}
-                  style={{ width: `${pct}%` }}
-                />
-              );
-            })}
-          </div>
-          <div className="mt-3 grid grid-cols-3 gap-2">
-            {methods.map((m) => {
-              const pct = total > 0 ? Math.round((amounts[m] / total) * 100) : 0;
-              return (
-                <div key={m} className="rounded-lg border border-white/10 bg-slate-950/40 px-2.5 py-2">
-                  <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-slate-400">
-                    <span className={`h-1.5 w-1.5 rounded-full ${methodMeta[m].color}`} />
-                    {methodMeta[m].label}
-                  </div>
-                  <div className="mt-0.5 text-sm font-semibold text-white">{pct}%</div>
-                  <div className="text-[11px] text-slate-500">{formatMoney(amounts[m])}</div>
-                </div>
-              );
-            })}
-          </div>
-        </>
-      ) : (
-        <div className="mt-3 text-xs text-slate-400">No payments recorded yet.</div>
-      )}
     </article>
   );
 }

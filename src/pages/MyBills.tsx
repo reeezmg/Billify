@@ -16,6 +16,8 @@ type BillFormState = {
   tax_percent: string;
 };
 
+type BillMode = 'auto' | 'manual';
+
 const createInitialForm = (): BillFormState => ({
   period_month: new Date().getMonth() + 1,
   period_year: String(new Date().getFullYear()),
@@ -42,6 +44,7 @@ export default function MyBills() {
   const [bills, setBills] = useState<Bill[]>([]);
   const [isBillModalOpen, setIsBillModalOpen] = useState(false);
   const [editingBillId, setEditingBillId] = useState<number | null>(null);
+  const [billMode, setBillMode] = useState<BillMode>('auto');
   const [form, setForm] = useState<BillFormState>(createInitialForm());
   const [formError, setFormError] = useState('');
   const navigate = useNavigate();
@@ -72,6 +75,7 @@ export default function MyBills() {
 
   const resetForm = () => {
     setEditingBillId(null);
+    setBillMode('auto');
     setForm(createInitialForm());
     setFormError('');
   };
@@ -85,6 +89,7 @@ export default function MyBills() {
     const taxableBase = bill.fixed_charge + bill.energy_charge + bill.extra_charge;
     const derivedTaxPercent = taxableBase > 0 ? (bill.tax / taxableBase) * 100 : 0;
     setEditingBillId(bill.id);
+    setBillMode(bill.entry_mode ?? 'auto');
     setForm({
       period_month: bill.period_month,
       period_year: String(bill.period_year),
@@ -139,32 +144,55 @@ export default function MyBills() {
               </button>
             </div>
 
+            {!editingBillId ? (
+              <div className="mt-5 grid grid-cols-2 rounded-2xl border border-white/10 bg-slate-950/50 p-1">
+                {(['auto', 'manual'] as BillMode[]).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    className={`rounded-xl px-4 py-2 text-sm font-medium capitalize transition ${
+                      billMode === mode ? 'bg-brand-500 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'
+                    }`}
+                    onClick={() => setBillMode(mode)}
+                  >
+                    {mode}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
             <form
               className="mt-6 space-y-6"
               onSubmit={async (event) => {
                 event.preventDefault();
                 setFormError('');
                 try {
-                  await window.api.bills.save({
+                  const useEmptyManualBill = billMode === 'manual' && !editingBillId;
+                  const savedBillId = await window.api.bills.save({
                     id: editingBillId ?? undefined,
+                    entry_mode: billMode,
                     period_month: form.period_month,
                     period_year: Number(form.period_year),
-                    fixed_unit: fixedUnit,
-                    fixed_unit_price: fixedUnitPrice,
-                    fixed_charge: liveFixed,
-                    energy_unit: energyUnit,
-                    energy_unit_price: energyUnitPrice,
-                    energy_charge: liveEnergy,
-                    extra_charge: extraCharge,
-                    interest_charge: interestCharge,
-                    other_charge: otherCharge,
-                    tax_percent: taxPercent,
-                    tax: liveTax,
-                    total: liveTotal,
+                    fixed_unit: useEmptyManualBill ? 0 : fixedUnit,
+                    fixed_unit_price: useEmptyManualBill ? 0 : fixedUnitPrice,
+                    fixed_charge: useEmptyManualBill ? 0 : liveFixed,
+                    energy_unit: useEmptyManualBill ? 0 : energyUnit,
+                    energy_unit_price: useEmptyManualBill ? 0 : energyUnitPrice,
+                    energy_charge: useEmptyManualBill ? 0 : liveEnergy,
+                    extra_charge: useEmptyManualBill ? 0 : extraCharge,
+                    interest_charge: useEmptyManualBill ? 0 : interestCharge,
+                    other_charge: useEmptyManualBill ? 0 : otherCharge,
+                    tax_percent: useEmptyManualBill ? 0 : taxPercent,
+                    tax: useEmptyManualBill ? 0 : liveTax,
+                    total: useEmptyManualBill ? 0 : liveTotal,
                   });
                   setIsBillModalOpen(false);
                   resetForm();
-                  refresh();
+                  if (billMode === 'manual' && savedBillId) {
+                    navigate(`/bills/${savedBillId}/split`);
+                  } else {
+                    refresh();
+                  }
                 } catch (error: any) {
                   setFormError(error?.message ?? 'Could not save this bill. Please try again.');
                 }
@@ -204,6 +232,7 @@ export default function MyBills() {
                     required
                   />
                 </label>
+                {billMode === 'auto' ? <>
                 <label className="space-y-2 text-sm text-slate-300">
                   <div>Fixed unit</div>
                   <input
@@ -227,7 +256,7 @@ export default function MyBills() {
                   />
                 </label>
                 <label className="space-y-2 text-sm text-slate-300">
-                  <div>Energy unit</div>
+                  <div>Consumed unit</div>
                   <input
                     type="number"
                     step="0.01"
@@ -238,7 +267,7 @@ export default function MyBills() {
                   />
                 </label>
                 <label className="space-y-2 text-sm text-slate-300">
-                  <div>Energy Unit price</div>
+                  <div>Consumed Unit price</div>
                   <input
                     type="number"
                     step="0.01"
@@ -293,15 +322,17 @@ export default function MyBills() {
                     onFocus={focusSelectAll}
                   />
                 </label>
+                </> : null}
               </div>
 
+              {billMode === 'auto' ? (
               <div className="grid gap-3 rounded-3xl border border-white/10 bg-white/5 p-4 md:grid-cols-3">
                 <div className="flex flex-col gap-1 text-sm">
                   <span className="text-slate-300">Fixed charge</span>
                   <span className="text-white">Rs {liveFixed.toFixed(2)}</span>
                 </div>
                 <div className="flex flex-col gap-1 text-sm">
-                  <span className="text-slate-300">Energy charge</span>
+                  <span className="text-slate-300">Consumed charge</span>
                   <span className="text-white">Rs {liveEnergy.toFixed(2)}</span>
                 </div>
                 <div className="flex flex-col gap-1 text-sm">
@@ -309,6 +340,11 @@ export default function MyBills() {
                   <span className="text-white">Rs {liveTotal.toFixed(2)}</span>
                 </div>
               </div>
+              ) : (
+                <div className="rounded-2xl border border-cyan-400/20 bg-cyan-400/5 px-4 py-3 text-sm text-cyan-100">
+                  Continue to enter tenant readings and charges manually.
+                </div>
+              )}
 
               <div className="flex flex-wrap justify-end gap-3">
                 <button
@@ -322,7 +358,7 @@ export default function MyBills() {
                   Cancel
                 </button>
                 <button type="submit" className="rounded-xl bg-brand-500 px-4 py-2 text-white transition hover:bg-brand-400">
-                  {editingBillId ? 'Update Bill' : 'Save Bill'}
+                  {editingBillId ? 'Update Bill' : billMode === 'manual' ? 'Continue' : 'Save Bill'}
                 </button>
               </div>
             </form>

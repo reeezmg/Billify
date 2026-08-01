@@ -9,6 +9,11 @@ const formatDate = (value: string | null) => {
   return date.toLocaleDateString('en-GB');
 };
 
+const amount = (value: unknown) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
 export default function Payments() {
   const [payments, setPayments] = useState<PaymentLedgerEntry[]>([]);
 
@@ -18,9 +23,9 @@ export default function Payments() {
 
   const summary = useMemo(() => {
     return {
-      totalCollected: payments.reduce((sum, payment) => sum + payment.paid_amount, 0),
-      electricityTotal: payments.filter((payment) => payment.paid_for === 'electricity').reduce((sum, payment) => sum + payment.paid_amount, 0),
-      managementTotal: payments.filter((payment) => payment.paid_for === 'management').reduce((sum, payment) => sum + payment.paid_amount, 0),
+      totalCollected: payments.reduce((sum, payment) => sum + amount(payment.paid_amount), 0),
+      electricityTotal: payments.reduce((sum, payment) => sum + amount(payment.electricity_amount), 0),
+      managementTotal: payments.reduce((sum, payment) => sum + amount(payment.management_amount), 0),
     };
   }, [payments]);
 
@@ -28,7 +33,7 @@ export default function Payments() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-semibold text-white">Payments</h1>
-        <p className="mt-2 text-slate-400">A unified ledger of all paid electricity and management bills.</p>
+        <p className="mt-2 text-slate-400">A ledger of all paid combined invoices.</p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
@@ -53,32 +58,20 @@ export default function Payments() {
               <th className="px-4 py-3">Tenant (Room)</th>
               <th className="px-4 py-3">Paid date</th>
               <th className="px-4 py-3">Paid amount</th>
-              <th className="px-4 py-3">Paid method</th>
-              <th className="px-4 py-3">Paid for</th>
+              <th className="px-4 py-3">Invoice number</th>
             </tr>
           </thead>
           <tbody>
             {payments.map((payment) => (
-              <tr key={`${payment.paid_for}-${payment.source_id}`} className="border-t border-white/10">
+              <tr key={payment.source_id} className="border-t border-white/10">
                 <td className="px-4 py-3">
                   <Link to={`/tenants/${payment.tenant_id}/bills`} className="text-brand-200 transition hover:text-brand-100">
                     {payment.tenant_name} ({payment.room_no})
                   </Link>
                 </td>
                 <td className="px-4 py-3">{formatDate(payment.paid_date)}</td>
-                <td className="px-4 py-3">Rs {payment.paid_amount.toFixed(2)}</td>
-                <td className="px-4 py-3">{payment.paid_method}</td>
-                <td className="px-4 py-3">
-                  <span
-                    className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${
-                      payment.paid_for === 'electricity'
-                        ? 'bg-sky-500/15 text-sky-300 ring-1 ring-sky-500/20'
-                        : 'bg-violet-500/15 text-violet-300 ring-1 ring-violet-500/20'
-                    }`}
-                  >
-                    {payment.paid_for}
-                  </span>
-                </td>
+                <td className="px-4 py-3">Rs {amount(payment.paid_amount).toFixed(2)}</td>
+                <td className="px-4 py-3 font-medium text-sky-200">INV-{payment.split_id ?? payment.source_id}-{String(payment.room_no).replace(/\s+/g, '').toUpperCase()}</td>
               </tr>
             ))}
           </tbody>

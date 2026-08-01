@@ -25,6 +25,7 @@ export type PaymentMethod = 'cash' | 'upi' | 'card';
 
 export type Bill = {
   id: number;
+  entry_mode?: 'auto' | 'manual';
   period_month: number;
   period_year: number;
   fixed_unit: number;
@@ -61,17 +62,27 @@ export type TenantBill = {
   consumed_unit: number;
   fixed_charge_calc: number;
   fixed_adjust: number;
+  fixed_unit?: number;
+  fixed_unit_price?: number;
+  energy_unit_price?: number;
+  energy_adjust?: number;
   energy_charge_calc?: number;
   energy_charge: number;
   extra_charge_calc: number;
   extra_adjust: number;
   tax: number;
+  tax_adjust?: number;
   sub_total: number;
   interest_charge_calc: number;
   interest_adjust: number;
   other_charge_calc: number;
   other_charge?: number;
   other_adjust?: number;
+  maintenance_fee?: number;
+  generator_fee?: number;
+  management_extra_fee?: number;
+  electricity_total?: number;
+  management_total?: number;
   payment_status: PaymentStatus;
   payment_method: PaymentMethod | null;
   payment_date: string | null;
@@ -135,14 +146,15 @@ export type ManagementBatchDetail = {
 };
 
 export type PaymentLedgerEntry = {
-  paid_for: 'electricity' | 'management';
   source_id: number;
+  split_id: number;
   tenant_id: number;
   tenant_name: string;
   room_no: string;
   paid_date: string;
   paid_amount: number;
-  paid_method: PaymentMethod;
+  electricity_amount: number;
+  management_amount: number;
   period_month: number;
   period_year: number;
 };

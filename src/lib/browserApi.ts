@@ -49,6 +49,7 @@ type StoredManagementBatch = ManagementBillBatch & {
 };
 
 type BrowserState = {
+  authSeedVersion: number;
   sessionUserId: number | null;
   users: StoredUser[];
   tenants: Tenant[];
@@ -59,6 +60,7 @@ type BrowserState = {
 };
 
 const STORAGE_KEY = 'billify.browserState.v1';
+const AUTH_SEED_VERSION = 2;
 
 const defaultSettings: AppSettings = {
   company_name: 'Billify Building',
@@ -73,14 +75,15 @@ const defaultSettings: AppSettings = {
 };
 
 const defaultState: BrowserState = {
+  authSeedVersion: AUTH_SEED_VERSION,
   sessionUserId: null,
   users: [
     {
       id: 1,
       name: 'Admin',
-      email: 'admin@local',
+      email: 'admin',
       role: 'admin',
-      must_change_password: true,
+      must_change_password: false,
       password: 'admin',
     },
   ],
@@ -104,6 +107,14 @@ function loadState(): BrowserState {
   try {
     const parsed = JSON.parse(raw) as Partial<BrowserState>;
     const parsedSettings = (parsed.settings ?? {}) as Partial<AppSettings> & { whatsapp_template_name?: string };
+    const users = parsed.users?.length ? (parsed.users as StoredUser[]) : clone(defaultState.users);
+    const migratedUsers = (parsed.authSeedVersion ?? 1) < AUTH_SEED_VERSION
+      ? users.map((user) =>
+          user.id === 1 && user.role === 'admin'
+            ? { ...user, email: 'admin', password: 'admin', must_change_password: false }
+            : user,
+        )
+      : users;
     return {
       ...clone(defaultState),
       ...parsed,
@@ -122,7 +133,8 @@ function loadState(): BrowserState {
           parsedSettings.whatsapp_management_reminder_template ?? defaultSettings.whatsapp_management_reminder_template,
         whatsapp_template_language: parsedSettings.whatsapp_template_language ?? defaultSettings.whatsapp_template_language,
       },
-      users: parsed.users?.length ? (parsed.users as StoredUser[]) : clone(defaultState.users),
+      authSeedVersion: AUTH_SEED_VERSION,
+      users: migratedUsers,
       tenants: parsed.tenants?.length
         ? (parsed.tenants as Tenant[]).map((tenant) => ({
             ...tenant,
@@ -868,38 +880,20 @@ export function createBrowserApi() {
             if (row.payment_status !== 'paid') continue;
             const tenant = state.tenants.find((item) => item.id === row.tenant_id);
             entries.push({
-              paid_for: 'electricity',
               source_id: row.id ?? tenantBillRowId(split.id, row.tenant_id),
+              split_id: split.id,
               tenant_id: row.tenant_id,
               tenant_name: tenant?.name ?? row.tenant_name ?? '',
               room_no: tenant?.room_no ?? row.room_no ?? '',
               paid_date: row.payment_date ?? split.reading_date,
               paid_amount: row.payable ?? 0,
-              paid_method: getPaymentMethod(row) ?? 'cash',
+              electricity_amount: (row.payable ?? 0) - (row.management_total ?? 0),
+              management_amount: row.management_total ?? 0,
               period_month: bill.period_month,
               period_year: bill.period_year,
             });
           }
         }
-        for (const batch of state.managementBatches) {
-          for (const row of batch.rows) {
-            if (row.payment_status !== 'paid') continue;
-            const tenant = state.tenants.find((item) => item.id === row.tenant_id);
-            entries.push({
-              paid_for: 'management',
-              source_id: row.id ?? managementBillRowId(batch.id, row.tenant_id),
-              tenant_id: row.tenant_id,
-              tenant_name: tenant?.name ?? row.tenant_name ?? '',
-              room_no: tenant?.room_no ?? row.room_no ?? '',
-              paid_date: row.payment_date ?? batch.created_at,
-              paid_amount: row.total ?? 0,
-              paid_method: getPaymentMethod(row) ?? 'cash',
-              period_month: batch.period_month,
-              period_year: batch.period_year,
-            });
-          }
-        }
-
         return clone(entries.sort((a, b) => String(b.paid_date).localeCompare(String(a.paid_date))));
       },
     },
@@ -923,6 +917,7 @@ export function createBrowserApi() {
         return this.save(bill as Partial<Bill>);
       },
       async save(bill: Partial<Bill>) {
+        let savedId = bill.id ?? 0;
         setState((state) => {
           const bills = [...state.bills];
           const fixedCharge = bill.fixed_charge ?? (bill.fixed_unit ?? 0) * (bill.fixed_unit_price ?? 0);
@@ -932,6 +927,7 @@ export function createBrowserApi() {
             bill.total ??
             fixedCharge + energyCharge + (bill.extra_charge ?? 0) + taxAmount + (bill.interest_charge ?? 0) + (bill.other_charge ?? 0);
           const payload = {
+            entry_mode: bill.entry_mode ?? 'auto',
             period_month: bill.period_month ?? new Date().getMonth() + 1,
             period_year: bill.period_year ?? new Date().getFullYear(),
             fixed_unit: bill.fixed_unit ?? 0,
@@ -949,26 +945,19 @@ export function createBrowserApi() {
           };
 
           const existingIndex = bill.id ? bills.findIndex((item) => item.id === bill.id) : -1;
-          const duplicate = bills.find(
-            (item) =>
-              item.period_month === payload.period_month &&
-              item.period_year === payload.period_year &&
-              item.id !== bill.id,
-          );
-          if (duplicate) {
-            throw new Error(`A bill already exists for ${payload.period_month}/${payload.period_year}. Please edit the existing bill instead.`);
-          }
-
           if (existingIndex >= 0) {
             bills[existingIndex] = { ...(bills[existingIndex] as Bill), ...payload };
+            savedId = bills[existingIndex].id;
           } else {
+            savedId = nextId(bills);
             bills.push({
-              id: nextId(bills),
+              id: savedId,
               ...payload,
             });
           }
           return { ...state, bills };
         });
+        return savedId;
       },
       async get(id: number) {
         return clone(getState().bills.find((bill) => bill.id === id) ?? null);

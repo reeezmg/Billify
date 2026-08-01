@@ -50,7 +50,7 @@ export function getBillPeriodLabel(bill: TenantBillPdfContext['bill']) {
 
 export function getTenantBillNumber(split: TenantBillPdfContext['split'], row: TenantBillPdfContext['row']) {
   const room = String(row.room_no || row.tenant_id).replace(/\s+/g, '').toUpperCase();
-  return `BILL-${split.id}-${room}`;
+  return `INV-${split.id}-${room}`;
 }
 
 export function getBillPayDate(readingDate: string) {
@@ -62,13 +62,12 @@ export function getTenantBillFolderName(bill: TenantBillPdfContext['bill']) {
 }
 
 export async function buildTenantBillPdfBytes(context: TenantBillPdfContext) {
-  const { settings, bill, split, row } = context;
-  const monthName = dayjs().month(bill.period_month - 1).format('MMMM');
+  const { bill, split, row } = context;
   const payDate = getBillPayDate(split.reading_date);
   const chunks: Uint8Array[] = [];
 
   return await new Promise<Uint8Array>((resolve, reject) => {
-    const doc = new PDFDocument({ size: 'A5', margin: 28 });
+    const doc = new PDFDocument({ size: 'A4', margin: 36 });
 
     doc.on('data', (chunk: Uint8Array | Buffer | string) => {
       if (typeof chunk === 'string') {
@@ -94,7 +93,9 @@ export async function buildTenantBillPdfBytes(context: TenantBillPdfContext) {
     const formatMoney = (value: number) => `Rs ${value.toFixed(2)}`;
     const formatNumber = (value: number) => value.toFixed(2);
     const tenantFixedAmount = row.fixed_charge_calc + row.fixed_adjust;
-    const tenantFixedUnit = bill.fixed_unit_price > 0 ? tenantFixedAmount / bill.fixed_unit_price : 0;
+    const tenantFixedUnitPrice = row.fixed_unit_price || bill.fixed_unit_price;
+    const tenantEnergyUnitPrice = row.energy_unit_price || bill.energy_unit_price;
+    const tenantFixedUnit = row.fixed_unit || (tenantFixedUnitPrice > 0 ? tenantFixedAmount / tenantFixedUnitPrice : 0);
 
     const drawBox = (x: number, y: number, width: number, height: number, fill = '#ffffff', stroke = borderColor) => {
       doc.rect(x, y, width, height).fillAndStroke(fill, stroke);
@@ -113,19 +114,17 @@ export async function buildTenantBillPdfBytes(context: TenantBillPdfContext) {
       .fillColor(darkText)
       .font('Helvetica-Bold')
       .fontSize(20)
-      .text(settings.company_name, left + 14, y + 14, { width: contentWidth - 28, align: 'center' });
-    if (settings.company_address) {
-      doc
-        .fillColor(mutedText)
-        .font('Helvetica')
-        .fontSize(8)
-        .text(settings.company_address, left + 14, y + 39, { width: contentWidth - 28, align: 'center' });
-    }
+      .text('A S Maintainence', left + 14, y + 12, { width: contentWidth - 28, align: 'center' });
+    doc
+      .fillColor(mutedText)
+      .font('Helvetica')
+      .fontSize(9)
+      .text('Phone no: +91 9663680185', left + 14, y + 38, { width: contentWidth - 28, align: 'center' });
     doc
       .fillColor(darkText)
       .font('Helvetica-Bold')
       .fontSize(11)
-      .text(`ELECTRICITY BILL - ${monthName} ${bill.period_year}`, left + 14, y + 57, {
+      .text('INVOICE', left + 14, y + 56, {
         width: contentWidth - 28,
         align: 'center',
       });
@@ -135,7 +134,7 @@ export async function buildTenantBillPdfBytes(context: TenantBillPdfContext) {
     drawBox(left, y, metaWidth, 40, '#ffffff');
     drawBox(left + metaWidth, y, metaWidth, 40, '#ffffff');
     drawBox(left + metaWidth * 2, y, metaWidth, 40, '#ffffff');
-    drawLabelValue('Bill No', getTenantBillNumber(split, row), left + 10, y + 8, metaWidth - 20, 10);
+    drawLabelValue('Invoice No', getTenantBillNumber(split, row), left + 10, y + 8, metaWidth - 20, 10);
     drawLabelValue('Reading Date', dayjs(split.reading_date).format('DD MMM YYYY'), left + metaWidth + 10, y + 8, metaWidth - 20, 9);
     drawLabelValue('Pay Date', payDate, left + metaWidth * 2 + 10, y + 8, metaWidth - 20, 9);
 
@@ -161,7 +160,7 @@ export async function buildTenantBillPdfBytes(context: TenantBillPdfContext) {
     });
 
     y += 88;
-    doc.fillColor(darkText).font('Helvetica-Bold').fontSize(12).text('Charge Summary', left, y);
+    doc.fillColor(darkText).font('Helvetica-Bold').fontSize(12).text('Electricity Charges', left, y);
     y += 20;
 
     const descWidth = 120;
@@ -185,13 +184,13 @@ export async function buildTenantBillPdfBytes(context: TenantBillPdfContext) {
     y += headerHeight;
 
     const chargeRows: Array<[string, string, number, boolean?]> = [
-      ['Fixed Charge', `${formatNumber(tenantFixedUnit)} x ${formatNumber(bill.fixed_unit_price)}`, tenantFixedAmount],
-      ['Energy Charge', `${formatNumber(row.consumed_unit)} x ${formatNumber(bill.energy_unit_price)}`, row.energy_charge],
+      ['Fixed Charge', `${formatNumber(tenantFixedUnit)} x ${formatNumber(tenantFixedUnitPrice)}`, tenantFixedAmount],
+      ['Consumed Charge', `${formatNumber(row.consumed_unit)} x ${formatNumber(tenantEnergyUnitPrice)}`, row.energy_charge],
       ['Extra Charge', '', row.extra_charge_calc + row.extra_adjust],
       ['Tax', `${formatNumber(bill.tax_percent)}%`, row.tax],
-      ['Sub Total', '', row.sub_total, true],
       ['Interest Charge', '', row.interest_charge_calc + row.interest_adjust],
       ['Other Charge', '', row.other_charge ?? row.other_charge_calc + (row.other_adjust ?? 0)],
+      ['Electricity Subtotal', '', row.electricity_total ?? row.sub_total + row.interest_charge_calc + row.interest_adjust + (row.other_charge ?? row.other_charge_calc + (row.other_adjust ?? 0)), true],
     ];
 
     for (const [label, calculation, amount, bold] of chargeRows) {
@@ -203,6 +202,26 @@ export async function buildTenantBillPdfBytes(context: TenantBillPdfContext) {
         align: 'right',
         fill,
       });
+      y += rowHeight;
+    }
+
+    y += 14;
+    doc.fillColor(darkText).font('Helvetica-Bold').fontSize(12).text('Management Charges', left, y);
+    y += 20;
+    drawTableCell('Description', left, y, descWidth + calcWidth, headerHeight, { bold: true, fill: headerFill });
+    drawTableCell('Amount', left + descWidth + calcWidth, y, amountWidth, headerHeight, { bold: true, align: 'right', fill: headerFill });
+    y += headerHeight;
+
+    const managementRows: Array<[string, number, boolean?]> = [
+      ['Maintenance Fee', row.maintenance_fee ?? 0],
+      ['Generator Fee', row.generator_fee ?? 0],
+      ['Extra Fee', row.management_extra_fee ?? 0],
+      ['Management Total', row.management_total ?? 0, true],
+    ];
+    for (const [label, amount, bold] of managementRows) {
+      const fill = bold ? '#f1f5f9' : '#ffffff';
+      drawTableCell(label, left, y, descWidth + calcWidth, rowHeight, { bold, fill });
+      drawTableCell(formatMoney(amount), left + descWidth + calcWidth, y, amountWidth, rowHeight, { bold, align: 'right', fill });
       y += rowHeight;
     }
 

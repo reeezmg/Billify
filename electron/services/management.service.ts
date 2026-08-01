@@ -129,13 +129,13 @@ export async function rescanBatch(batchId: number) {
             Number(existing.generator_fees ?? 0) !== generatorFees ||
             Number(existing.total ?? 0) !== total
           ) {
-            update.run(maintenanceFees, generatorFees, total, existing.id);
+            update.run([maintenanceFees, generatorFees, total, existing.id]);
             result.updated += 1;
           }
           continue;
         }
 
-        insert.run(batchId, tenant.id, maintenanceFees, generatorFees, total, 'pending', null, null, null, null);
+        insert.run([batchId, tenant.id, maintenanceFees, generatorFees, total, 'pending', null, null, null, null]);
         result.added += 1;
       }
 
@@ -146,11 +146,11 @@ export async function rescanBatch(batchId: number) {
           continue;
         }
 
-        remove.run(row.id);
+        remove.run([row.id]);
         result.deleted += 1;
       }
 
-      touchBatch.run(batchId);
+      touchBatch.run([batchId]);
     } finally {
       insert.free();
       update.free();
@@ -163,20 +163,26 @@ export async function rescanBatch(batchId: number) {
 }
 
 export async function createBatch(payload: { period_month: number; period_year: number }) {
+  const periodMonth = Number(payload?.period_month);
+  const periodYear = Number(payload?.period_year);
+  if (!Number.isInteger(periodMonth) || periodMonth < 1 || periodMonth > 12 || !Number.isInteger(periodYear) || periodYear < 1) {
+    throw new Error('A valid management bill month and year are required.');
+  }
+
   let batchId = 0;
   await transaction((db) => {
     const duplicate = runQuery<ManagementBillBatch>(
       db,
       'SELECT * FROM management_bill_batches WHERE period_month = ? AND period_year = ?',
-      [payload.period_month, payload.period_year],
+      [periodMonth, periodYear],
     )[0];
     if (duplicate) {
-      throw new Error(duplicatePeriodMessage(payload.period_month, payload.period_year));
+      throw new Error(duplicatePeriodMessage(periodMonth, periodYear));
     }
 
     db.prepare(
       'INSERT INTO management_bill_batches (period_month, period_year, status, created_at, updated_at) VALUES (?, ?, ?, datetime(\'now\'), datetime(\'now\'))',
-    ).run(payload.period_month, payload.period_year, 'created');
+    ).run([periodMonth, periodYear, 'created']);
     batchId = Number(runQuery<{ id: number }>(db, 'SELECT last_insert_rowid() AS id')[0]?.id ?? 0);
 
     const eligibleTenants = runQuery<Tenant>(
@@ -196,7 +202,7 @@ export async function createBatch(payload: { period_month: number; period_year: 
       for (const tenant of eligibleTenants) {
         const maintenanceFees = Number(tenant.maintenance_fees ?? 0);
         const generatorFees = Number(tenant.generator_fees ?? 0);
-        insert.run(
+        insert.run([
           batchId,
           tenant.id,
           maintenanceFees,
@@ -207,7 +213,7 @@ export async function createBatch(payload: { period_month: number; period_year: 
           null,
           null,
           null,
-        );
+        ]);
       }
     } finally {
       insert.free();

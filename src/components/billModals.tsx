@@ -1,6 +1,4 @@
-import type { PaymentMethod, PaymentStatus } from '../types';
-
-const paymentMethodOptions: PaymentMethod[] = ['cash', 'upi', 'card'];
+import type { PaymentStatus } from '../types';
 
 type ReminderModalProps = {
   open: boolean;
@@ -19,13 +17,11 @@ type PaymentUpdateModalProps = {
   error: string | null;
   busy: boolean;
   status: PaymentStatus;
-  method: PaymentMethod | '';
   paymentDate: string;
   showPaymentDate: boolean;
   onClose: () => void;
   onConfirm: () => void;
   onStatusChange: (status: PaymentStatus) => void;
-  onMethodChange: (method: PaymentMethod | '') => void;
   onPaymentDateChange: (paymentDate: string) => void;
 };
 
@@ -68,13 +64,11 @@ export function PaymentUpdateModal({
   error,
   busy,
   status,
-  method,
   paymentDate,
   showPaymentDate,
   onClose,
   onConfirm,
   onStatusChange,
-  onMethodChange,
   onPaymentDateChange,
 }: PaymentUpdateModalProps) {
   if (!open) return null;
@@ -100,23 +94,7 @@ export function PaymentUpdateModal({
           </label>
 
           {status === 'paid' ? (
-            <>
-              <label className="space-y-2 text-sm text-slate-300">
-                <div>Payment method</div>
-                <select
-                  className="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-white"
-                  value={method}
-                  onChange={(e) => onMethodChange(e.target.value as PaymentMethod | '')}
-                >
-                  <option value="">Select method</option>
-                  {paymentMethodOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option.toUpperCase()}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {showPaymentDate ? (
+            showPaymentDate ? (
                 <label className="space-y-2 text-sm text-slate-300">
                   <div>Payment date</div>
                   <input
@@ -126,8 +104,7 @@ export function PaymentUpdateModal({
                     onChange={(e) => onPaymentDateChange(e.target.value)}
                   />
                 </label>
-              ) : null}
-            </>
+              ) : null
           ) : null}
         </div>
 

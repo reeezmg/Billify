@@ -1,14 +1,6 @@
 import { execute, queryAll, queryOne } from '../db/client';
 import type { Bill, BillSplit } from '../../src/types';
 
-function isUniquePeriodError(error: unknown) {
-  return error instanceof Error && error.message.includes('UNIQUE constraint failed: bills.period_month, bills.period_year');
-}
-
-function duplicatePeriodMessage(month?: number, year?: number) {
-  return `A bill already exists for ${month}/${year}. Please edit the existing bill instead.`;
-}
-
 export async function listBills() {
   return queryAll<
     Bill & {
@@ -49,9 +41,10 @@ export async function createBill(bill: Omit<Bill, 'id'>) {
 
   const result = await execute(
     `INSERT INTO bills
-      (period_month, period_year, fixed_unit, fixed_unit_price, fixed_charge, energy_unit, energy_unit_price, energy_charge, extra_charge, tax, tax_percent, interest_charge, other_charge, total)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (entry_mode, period_month, period_year, fixed_unit, fixed_unit_price, fixed_charge, energy_unit, energy_unit_price, energy_charge, extra_charge, tax, tax_percent, interest_charge, other_charge, total)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
+      bill.entry_mode ?? 'auto',
       bill.period_month,
       bill.period_year,
       bill.fixed_unit,
@@ -80,22 +73,14 @@ export async function upsertBill(bill: Partial<Bill>) {
     fixedCharge + energyCharge + (bill.extra_charge ?? 0) + taxAmount + (bill.interest_charge ?? 0) + (bill.other_charge ?? 0);
 
   if (bill.id) {
-    const duplicate = await queryOne<Bill>(
-      'SELECT * FROM bills WHERE period_month = ? AND period_year = ? AND id != ?',
-      [bill.period_month, bill.period_year, bill.id],
-    );
-    if (duplicate) {
-      throw new Error(duplicatePeriodMessage(bill.period_month, bill.period_year));
-    }
-
-    try {
-      await execute(
+    await execute(
         `UPDATE bills
-         SET period_month = ?, period_year = ?, fixed_unit = ?, fixed_unit_price = ?, fixed_charge = ?, energy_unit = ?,
+         SET entry_mode = ?, period_month = ?, period_year = ?, fixed_unit = ?, fixed_unit_price = ?, fixed_charge = ?, energy_unit = ?,
              energy_unit_price = ?, energy_charge = ?, extra_charge = ?, tax = ?, tax_percent = ?, interest_charge = ?, other_charge = ?, total = ?,
              updated_at = datetime('now')
        WHERE id = ?`,
         [
+          bill.entry_mode ?? 'auto',
           bill.period_month,
           bill.period_year,
           bill.fixed_unit,
@@ -113,29 +98,15 @@ export async function upsertBill(bill: Partial<Bill>) {
           bill.id,
         ],
       );
-    } catch (error) {
-      if (isUniquePeriodError(error)) {
-        throw new Error(duplicatePeriodMessage(bill.period_month, bill.period_year));
-      }
-      throw error;
-    }
     return bill.id;
   }
 
-  const duplicate = await queryOne<Bill>('SELECT * FROM bills WHERE period_month = ? AND period_year = ?', [
-    bill.period_month,
-    bill.period_year,
-  ]);
-  if (duplicate) {
-    throw new Error(duplicatePeriodMessage(bill.period_month, bill.period_year));
-  }
-
-  try {
-    const result = await execute(
+  const result = await execute(
       `INSERT INTO bills
-      (period_month, period_year, fixed_unit, fixed_unit_price, fixed_charge, energy_unit, energy_unit_price, energy_charge, extra_charge, tax, tax_percent, interest_charge, other_charge, total)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (entry_mode, period_month, period_year, fixed_unit, fixed_unit_price, fixed_charge, energy_unit, energy_unit_price, energy_charge, extra_charge, tax, tax_percent, interest_charge, other_charge, total)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
+        bill.entry_mode ?? 'auto',
         bill.period_month,
         bill.period_year,
         bill.fixed_unit,
@@ -151,14 +122,8 @@ export async function upsertBill(bill: Partial<Bill>) {
         bill.other_charge ?? 0,
         total,
       ],
-    );
-    return result.lastID;
-  } catch (error) {
-    if (isUniquePeriodError(error)) {
-      throw new Error(duplicatePeriodMessage(bill.period_month, bill.period_year));
-    }
-    throw error;
-  }
+  );
+  return result.lastID;
 }
 
 export async function getBill(id: number) {

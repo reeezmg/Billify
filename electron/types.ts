@@ -70,6 +70,9 @@ export type TenantBillRecord = {
   other_charge_calc: number;
   other_charge?: number;
   other_adjust?: number;
+  maintenance_fee?: number;
+  generator_fee?: number;
+  management_extra_fee?: number;
   payment_status: PaymentStatus;
   payment_method: PaymentMethod | null;
   payment_date: string | null;
@@ -88,9 +91,17 @@ export type SplitBillRowInput = {
   previous_reading: number;
   present_reading: number;
   fixed_adjust: number;
+  fixed_unit?: number;
+  fixed_unit_price?: number;
+  energy_unit_price?: number;
+  energy_adjust?: number;
   extra_adjust: number;
+  tax_adjust?: number;
   interest_adjust: number;
   other_adjust?: number;
+  maintenance_fee?: number;
+  generator_fee?: number;
+  management_extra_fee?: number;
 };
 
 export type SplitBillInput = {
@@ -120,6 +131,8 @@ export type SplitBillRow = SplitBillRowInput & {
   interest_charge_calc: number;
   other_charge_calc: number;
   other_charge?: number;
+  electricity_total: number;
+  management_total: number;
   payable: number;
   ratio: number;
 };
@@ -139,6 +152,8 @@ export type SplitBillResult = {
     interest_charge?: number;
     other_charge_calc: number;
     other_charge?: number;
+    electricity_total: number;
+    management_total: number;
     payable: number;
   };
   reconciliation: {

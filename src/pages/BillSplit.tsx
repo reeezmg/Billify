@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
-import { PaymentUpdateModal, ReminderModal } from '../components/billModals';
+import { ReminderModal } from '../components/billModals';
 import { calculateSplit } from '../lib/calc';
-import type { Bill, PaymentMethod, PaymentStatus } from '../types';
+import type { Bill, PaymentStatus } from '../types';
 
 type RowState = {
   id?: number;
@@ -13,9 +13,17 @@ type RowState = {
   previous_reading: number;
   present_reading: number;
   fixed_adjust: number;
+  fixed_unit: number;
+  fixed_unit_price: number;
+  energy_unit_price: number;
+  energy_adjust: number;
   extra_adjust: number;
+  tax_adjust: number;
   interest_adjust: number;
   other_adjust: number;
+  maintenance_fee: number;
+  generator_fee: number;
+  management_extra_fee: number;
   consumed_unit?: number;
   fixed_charge_calc?: number;
   energy_charge_calc?: number;
@@ -26,9 +34,10 @@ type RowState = {
   interest_charge_calc?: number;
   other_charge_calc?: number;
   other_charge?: number;
+  electricity_total?: number;
+  management_total?: number;
   payable?: number;
   payment_status?: PaymentStatus;
-  payment_method?: PaymentMethod | null;
   payment_date?: string | null;
   whatsapp_sent_at?: string | null;
   whatsapp_message_id?: string | null;
@@ -49,16 +58,6 @@ type ReminderState = {
   error: string | null;
 };
 
-type PaymentState = {
-  open: boolean;
-  row: RowState | null;
-  status: PaymentStatus;
-  method: PaymentMethod | '';
-  paymentDate: string;
-  saving: boolean;
-  error: string | null;
-};
-
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
 const formatDate = (value: string | null) => {
@@ -72,6 +71,82 @@ const getPaymentStatusClass = (status: string) =>
   status === 'paid'
     ? 'bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/20'
     : 'bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/20';
+
+const moveSplitInputFocus = (event: KeyboardEvent<HTMLDivElement>) => {
+  if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+  const current = event.target;
+  if (!(current instanceof HTMLInputElement)) return;
+  event.preventDefault();
+  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+
+  const inputs = Array.from(event.currentTarget.querySelectorAll<HTMLInputElement>('input:not([disabled])'))
+    .filter((input) => input.offsetParent !== null);
+  const currentRect = current.getBoundingClientRect();
+  const currentX = currentRect.left + currentRect.width / 2;
+  const currentY = currentRect.top + currentRect.height / 2;
+  const vertical = event.key === 'ArrowUp' || event.key === 'ArrowDown';
+  const positive = event.key === 'ArrowDown' || event.key === 'ArrowRight';
+
+  const next = inputs
+    .filter((input) => input !== current)
+    .map((input) => {
+      const rect = input.getBoundingClientRect();
+      const x = rect.left + rect.width / 2;
+      const y = rect.top + rect.height / 2;
+      const primary = vertical ? y - currentY : x - currentX;
+      const crossAxis = vertical ? Math.abs(x - currentX) : Math.abs(y - currentY);
+      return { input, primary, score: Math.abs(primary) + crossAxis * 4 };
+    })
+    .filter(({ primary }) => positive ? primary > 1 : primary < -1)
+    .sort((left, right) => left.score - right.score)[0]?.input;
+
+  if (!next) return;
+  next.focus();
+  next.select();
+};
+
+function EmptyableNumberInput({
+  value,
+  onChange,
+  className,
+}: {
+  value: number;
+  onChange: (value: number) => void;
+  className: string;
+}) {
+  const [draft, setDraft] = useState(String(value));
+  const focused = useRef(false);
+
+  useEffect(() => {
+    if (!focused.current) setDraft(String(value));
+  }, [value]);
+
+  return (
+    <input
+      className={className}
+      type="number"
+      step="0.01"
+      value={draft}
+      onFocus={() => {
+        focused.current = true;
+      }}
+      onChange={(event) => {
+        const next = event.target.value;
+        setDraft(next);
+        if (next !== '') onChange(Number(next));
+      }}
+      onBlur={() => {
+        focused.current = false;
+        if (draft === '') {
+          setDraft('0');
+          onChange(0);
+        } else {
+          setDraft(String(Number(draft)));
+        }
+      }}
+    />
+  );
+}
 
 export default function BillSplit() {
   const { billId } = useParams();
@@ -89,15 +164,8 @@ export default function BillSplit() {
     sending: false,
     error: null,
   });
-  const [payment, setPayment] = useState<PaymentState>({
-    open: false,
-    row: null,
-    status: 'pending',
-    method: '',
-    paymentDate: todayIso(),
-    saving: false,
-    error: null,
-  });
+  const [paymentUpdatingId, setPaymentUpdatingId] = useState<number | null>(null);
+  const isManual = bill?.entry_mode === 'manual';
 
   useEffect(() => {
     (async () => {
@@ -122,13 +190,24 @@ export default function BillSplit() {
             previous_reading: row.previous_reading,
             present_reading: row.present_reading,
             fixed_adjust: row.fixed_adjust ?? 0,
+            fixed_unit:
+              row.fixed_unit ||
+              ((row.fixed_unit_price || selectedBill?.fixed_unit_price || 0) > 0
+                ? ((row.fixed_charge_calc ?? 0) + (row.fixed_adjust ?? 0)) / (row.fixed_unit_price || selectedBill?.fixed_unit_price)
+                : 0),
+            fixed_unit_price: row.fixed_unit_price || selectedBill?.fixed_unit_price || 0,
+            energy_unit_price: row.energy_unit_price || selectedBill?.energy_unit_price || 0,
+            energy_adjust: row.energy_adjust ?? 0,
             extra_adjust: row.extra_adjust ?? 0,
+            tax_adjust: row.tax_adjust ?? 0,
             interest_adjust: row.interest_adjust ?? 0,
             other_adjust: row.other_adjust ?? 0,
+            maintenance_fee: row.maintenance_fee ?? 0,
+            generator_fee: row.generator_fee ?? 0,
+            management_extra_fee: row.management_extra_fee ?? 0,
             other_charge_calc: row.other_charge_calc,
             payable: row.payable,
             payment_status: row.payment_status ?? 'pending',
-            payment_method: row.payment_method ?? null,
             payment_date: row.payment_date ?? null,
             whatsapp_sent_at: row.whatsapp_sent_at ?? null,
             whatsapp_message_id: row.whatsapp_message_id ?? null,
@@ -145,11 +224,18 @@ export default function BillSplit() {
           previous_reading: tenant.present_reading ?? 0,
           present_reading: tenant.present_reading ?? 0,
           fixed_adjust: 0,
+          fixed_unit: 0,
+          fixed_unit_price: selectedBill?.fixed_unit_price ?? 0,
+          energy_unit_price: selectedBill?.energy_unit_price ?? 0,
+          energy_adjust: 0,
           extra_adjust: 0,
+          tax_adjust: 0,
           interest_adjust: 0,
           other_adjust: 0,
+          maintenance_fee: tenant.maintenance_fees ?? 0,
+          generator_fee: tenant.generator_fees ?? 0,
+          management_extra_fee: 0,
           payment_status: 'pending',
-          payment_method: null,
           payment_date: null,
           whatsapp_sent_at: null,
           whatsapp_message_id: null,
@@ -163,26 +249,58 @@ export default function BillSplit() {
       bill
         ? calculateSplit({
             bill: {
-              fixed_charge: bill.fixed_charge,
-              energy_charge: bill.energy_charge,
+              fixed_charge: isManual ? 0 : bill.fixed_charge,
+              energy_charge: isManual ? 0 : bill.energy_charge,
               energy_unit_price: bill.energy_unit_price,
-              extra_charge: bill.extra_charge,
-              tax: bill.tax,
-              interest_charge: bill.interest_charge,
-              other_charge: bill.other_charge,
+              extra_charge: isManual ? 0 : bill.extra_charge,
+              tax: isManual ? 0 : bill.tax,
+              interest_charge: isManual ? 0 : bill.interest_charge,
+              other_charge: isManual ? 0 : bill.other_charge,
             },
             split: { tax_rate: bill.tax_percent },
             rows,
           })
         : null,
-    [bill, rows],
+    [bill, isManual, rows],
   );
+
+  const updateManualBillValue = (field: 'tax_percent' | 'energy_unit_price' | 'fixed_unit_price', value: number) => {
+    setRows((current) =>
+      current.map((row) => {
+        if (field === 'fixed_unit_price') {
+          return {
+            ...row,
+            fixed_unit_price: value,
+            fixed_adjust: Number((row.fixed_unit * value).toFixed(2)),
+          };
+        }
+        if (field === 'energy_unit_price') {
+          return { ...row, energy_unit_price: value, energy_adjust: 0 };
+        }
+        return { ...row, tax_adjust: 0 };
+      }),
+    );
+    setBill((current) => (current ? { ...current, [field]: value } : current));
+  };
 
   const updateRow = (
     tenantId: number,
     field: keyof Pick<
       RowState,
-      'previous_reading' | 'present_reading' | 'fixed_adjust' | 'extra_adjust' | 'interest_adjust' | 'other_adjust'
+      | 'previous_reading'
+      | 'present_reading'
+      | 'fixed_adjust'
+      | 'fixed_unit'
+      | 'fixed_unit_price'
+      | 'energy_unit_price'
+      | 'energy_adjust'
+      | 'extra_adjust'
+      | 'tax_adjust'
+      | 'interest_adjust'
+      | 'other_adjust'
+      | 'maintenance_fee'
+      | 'generator_fee'
+      | 'management_extra_fee'
     >,
     value: number,
   ) => {
@@ -327,6 +445,40 @@ export default function BillSplit() {
     );
   };
 
+  const renderManualChargeInput = (src: RowState, field: EditableField) => (
+    <EmptyableNumberInput
+      className="w-full rounded-lg border border-white/10 bg-slate-950 px-2 py-1 text-white"
+      value={src[field]}
+      onChange={(value) => updateRow(src.tenant_id, field, value)}
+    />
+  );
+
+  const renderManualFixedUnitInput = (src: RowState) => {
+    return (
+      <EmptyableNumberInput
+        className="w-full rounded-lg border border-white/10 bg-slate-950 px-2 py-1 text-white"
+        value={src.fixed_unit}
+        onChange={(fixedUnit) => {
+          setRows((current) =>
+            current.map((row) =>
+              row.tenant_id === src.tenant_id
+                ? { ...row, fixed_unit: fixedUnit, fixed_adjust: Number((fixedUnit * row.fixed_unit_price).toFixed(2)) }
+                : row,
+            ),
+          );
+        }}
+      />
+    );
+  };
+
+  const manualNumberInput = (value: number, onChange: (value: number) => void) => (
+    <EmptyableNumberInput
+      className="w-full rounded-lg border border-white/10 bg-slate-950 px-2 py-1 text-white"
+      value={value}
+      onChange={onChange}
+    />
+  );
+
   const persistSplit = async (status: 'draft' | 'finalized', options: { trackSubmit?: boolean } = {}) => {
     if (!split || !bill) return;
     const shouldTrackSubmit = options.trackSubmit ?? true;
@@ -334,19 +486,37 @@ export default function BillSplit() {
       setIsSubmitting(true);
     }
     try {
+      if (isManual && calc) {
+        const updatedBill: Bill = {
+          ...bill,
+          entry_mode: 'manual',
+          fixed_unit: rows.reduce((sum, row) => sum + row.fixed_unit, 0),
+          fixed_charge: calc.totals.fixed_charge,
+          energy_unit: calc.totals.consumed_unit,
+          energy_charge: calc.totals.energy_charge,
+          extra_charge: calc.totals.extra_charge,
+          tax: calc.totals.tax,
+          interest_charge: calc.totals.interest_charge,
+          other_charge: calc.totals.other_charge,
+          total: calc.totals.payable,
+        };
+        await window.api.bills.save(updatedBill);
+        setBill(updatedBill);
+      }
       await window.api.splits.save({
         split_id: split.id,
         status,
         reading_date: split.reading_date,
         tax_rate: bill.tax_percent,
         bill: {
-          fixed_charge: bill.fixed_charge,
-          energy_charge: bill.energy_charge,
+          fixed_charge: isManual ? 0 : bill.fixed_charge,
+          energy_charge: isManual ? 0 : bill.energy_charge,
           energy_unit_price: bill.energy_unit_price,
-          extra_charge: bill.extra_charge,
-          tax: bill.tax,
-          interest_charge: bill.interest_charge,
-          other_charge: bill.other_charge,
+          fixed_unit_price: bill.fixed_unit_price,
+          extra_charge: isManual ? 0 : bill.extra_charge,
+          tax: isManual ? 0 : bill.tax,
+          interest_charge: isManual ? 0 : bill.interest_charge,
+          other_charge: isManual ? 0 : bill.other_charge,
         },
         rows,
       });
@@ -372,13 +542,24 @@ export default function BillSplit() {
               previous_reading: row.previous_reading,
               present_reading: row.present_reading,
               fixed_adjust: row.fixed_adjust ?? 0,
+              fixed_unit:
+                row.fixed_unit ||
+                ((row.fixed_unit_price || bill.fixed_unit_price) > 0
+                  ? ((row.fixed_charge_calc ?? 0) + (row.fixed_adjust ?? 0)) / (row.fixed_unit_price || bill.fixed_unit_price)
+                  : 0),
+              fixed_unit_price: row.fixed_unit_price || bill.fixed_unit_price,
+              energy_unit_price: row.energy_unit_price || bill.energy_unit_price,
+              energy_adjust: row.energy_adjust ?? 0,
               extra_adjust: row.extra_adjust ?? 0,
+              tax_adjust: row.tax_adjust ?? 0,
               interest_adjust: row.interest_adjust ?? 0,
               other_adjust: row.other_adjust ?? 0,
+              maintenance_fee: row.maintenance_fee ?? 0,
+              generator_fee: row.generator_fee ?? 0,
+              management_extra_fee: row.management_extra_fee ?? 0,
               other_charge_calc: row.other_charge_calc,
               payable: row.payable,
               payment_status: row.payment_status ?? 'pending',
-              payment_method: row.payment_method ?? null,
               payment_date: row.payment_date ?? null,
               whatsapp_sent_at: row.whatsapp_sent_at ?? null,
               whatsapp_message_id: row.whatsapp_message_id ?? null,
@@ -401,7 +582,6 @@ export default function BillSplit() {
           ...row,
           id: sourceRow?.id,
           payment_status: sourceRow?.payment_status ?? 'pending',
-          payment_method: sourceRow?.payment_method ?? null,
           payment_date: sourceRow?.payment_date ?? null,
           whatsapp_sent_at: sourceRow?.whatsapp_sent_at ?? null,
           whatsapp_message_id: sourceRow?.whatsapp_message_id ?? null,
@@ -442,48 +622,20 @@ export default function BillSplit() {
     }
   };
 
-  const openPayment = (row: RowState) => {
-    setPayment({
-      open: true,
-      row,
-      status: row.payment_status ?? 'pending',
-      method: row.payment_method ?? '',
-      paymentDate: row.payment_date ?? todayIso(),
-      saving: false,
-      error: null,
-    });
-  };
-
-  const closePayment = () => {
-    setPayment({
-      open: false,
-      row: null,
-      status: 'pending',
-      method: '',
-      paymentDate: todayIso(),
-      saving: false,
-      error: null,
-    });
-  };
-
-  const savePayment = async () => {
-    if (!payment.row?.id) return;
-    setPayment((prev) => ({ ...prev, saving: true, error: null }));
+  const togglePayment = async (row: RowState) => {
+    if (!row.id) return;
+    const nextStatus: PaymentStatus = row.payment_status === 'paid' ? 'pending' : 'paid';
+    const paymentDate = nextStatus === 'paid' ? todayIso() : null;
+    setPaymentUpdatingId(row.id);
     try {
-      await window.api.tenants.updateBillPayment(
-        payment.row.id,
-        payment.status,
-        payment.status === 'paid' ? (payment.method || null) : null,
-        payment.status === 'paid' ? payment.paymentDate : null,
-      );
-      closePayment();
-      await persistSplit(split?.status === 'finalized' ? 'finalized' : 'draft', { trackSubmit: false });
+      await window.api.tenants.updateBillPayment(row.id, nextStatus, null, paymentDate);
+      setRows((current) => current.map((item) =>
+        item.id === row.id ? { ...item, payment_status: nextStatus, payment_date: paymentDate } : item,
+      ));
     } catch (error: any) {
-      setPayment((prev) => ({
-        ...prev,
-        saving: false,
-        error: error?.message ?? 'Failed to update payment',
-      }));
+      window.alert(error?.message ?? 'Failed to update payment');
+    } finally {
+      setPaymentUpdatingId(null);
     }
   };
 
@@ -531,6 +683,53 @@ export default function BillSplit() {
 
       {bill ? (
         <div className="space-y-4">
+          {isManual ? (
+            <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
+                <div>
+                  <div className="text-xs text-slate-400">Bill period</div>
+                  <div className="mt-2 text-sm text-white">{bill.period_month}/{bill.period_year}</div>
+                </div>
+                <label>
+                  <div className="text-xs text-slate-400">Reading date</div>
+                  <input
+                    type="date"
+                    className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950 px-2 py-1.5 text-sm text-white"
+                    value={split?.reading_date ?? ''}
+                    onChange={(event) => setSplit((current: any) => ({ ...current, reading_date: event.target.value }))}
+                  />
+                </label>
+                <div>
+                  <div className="text-xs text-slate-400">Total tenants</div>
+                  <div className="mt-2 text-sm text-white">{rows.length}</div>
+                </div>
+                <label>
+                  <div className="text-xs text-slate-400">Tax %</div>
+                  <EmptyableNumberInput
+                    className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950 px-2 py-1.5 text-sm text-white"
+                    value={bill.tax_percent}
+                    onChange={(value) => updateManualBillValue('tax_percent', value)}
+                  />
+                </label>
+                <label>
+                  <div className="text-xs text-slate-400">Consumed unit price</div>
+                  <EmptyableNumberInput
+                    className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950 px-2 py-1.5 text-sm text-white"
+                    value={bill.energy_unit_price}
+                    onChange={(value) => updateManualBillValue('energy_unit_price', value)}
+                  />
+                </label>
+                <label>
+                  <div className="text-xs text-slate-400">Fixed unit price</div>
+                  <EmptyableNumberInput
+                    className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950 px-2 py-1.5 text-sm text-white"
+                    value={bill.fixed_unit_price}
+                    onChange={(value) => updateManualBillValue('fixed_unit_price', value)}
+                  />
+                </label>
+              </div>
+            </div>
+          ) : <>
           <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
             <div className="grid gap-3 lg:grid-cols-12">
               <div className="rounded-2xl border border-white/10 bg-slate-950/35 px-4 py-3 lg:col-span-12">
@@ -563,7 +762,7 @@ export default function BillSplit() {
             
              
               <div className="rounded-2xl border border-cyan-400/15 bg-cyan-400/5 px-4 py-3 text-sm lg:col-span-4">
-                <div className="text-xs text-slate-400">Energy summary</div>
+                <div className="text-xs text-slate-400">Consumed summary</div>
                 <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-white">
                   <span>{bill.energy_unit.toFixed(2)} units</span>
                   <span className="text-slate-500">x</span>
@@ -616,7 +815,7 @@ export default function BillSplit() {
               <thead className="bg-white/5 text-slate-300">
                 <tr>
                   <th className="w-[16%] px-3 py-2">Fixed ({bill.fixed_unit.toFixed(2)} units)</th>
-                  <th className="w-[16%] px-3 py-2">Energy ({bill.energy_unit.toFixed(2)} units)</th>
+                  <th className="w-[16%] px-3 py-2">Consumed ({bill.energy_unit.toFixed(2)} units)</th>
                   <th className="w-[12%] px-3 py-2">Extra</th>
                   <th className="w-[12%] px-3 py-2">Tax</th>
                   <th className="w-[12%] px-3 py-2">Interest</th>
@@ -635,6 +834,7 @@ export default function BillSplit() {
               </tbody>
             </table>
           </div>
+          </>}
         </div>
       ) : null}
 
@@ -695,65 +895,92 @@ export default function BillSplit() {
         </div>
       ) : null}
 
-      <div className="rounded-3xl border border-white/10 bg-white/5">
-        <table className="table-fixed w-full text-left text-xs">
+      <div
+        className="min-w-0 overflow-hidden rounded-3xl border border-white/10 bg-white/5 [&_input]:min-w-0 [&_input]:px-1.5"
+        onKeyDown={moveSplitInputFocus}
+      >
+        <table className="w-full table-fixed text-left text-[11px]">
           <thead className="bg-white/5 text-slate-300">
             <tr>
-              <th className="w-[8%] px-2 py-2">Room</th>
-              <th className="w-[10%] border-r border-white/20 px-2 py-2">Name</th>
-              <th className="w-[7%] px-2 py-2">Prev</th>
-              <th className="w-[7%] border-r border-white/20 px-2 py-2">Present</th>
-              <th className="w-[7%] px-2 py-2">Used</th>
-              <th className="w-[8%] border-r border-white/20 px-2 py-2">Energy</th>
-              <th className="w-[8%] px-2 py-2">Fixed Unit</th>
-              <th className="w-[8%] border-r border-white/20 px-2 py-2">Fixed</th>
-              <th className="w-[8%] px-2 py-2">Extra</th>
-              <th className="w-[8%] border-r border-white/20 px-2 py-2">Tax</th>
-              <th className="w-[8%] border-r border-white/20 bg-orange-400/10 px-2 py-2 text-orange-100">Sub</th>
-              <th className="w-[8%] px-2 py-2">Interest</th>
-              <th className="w-[8%] border-r border-white/20 px-2 py-2">Other</th>
-              <th className="w-[10%] bg-emerald-400/10 px-2 py-2 text-emerald-100">Payable</th>
+              <th className="w-[10%] border-r border-white/20 px-2 py-3">Details</th>
+              <th className="w-[12%] border-r border-white/20 px-2 py-3">Readings</th>
+              <th className="w-[14%] border-r border-white/20 px-2 py-3">Consumed</th>
+              <th className="w-[14%] border-r border-white/20 px-2 py-3">Fixed</th>
+              <th className="w-[10%] border-r border-white/20 px-2 py-3">Charges</th>
+              <th className="w-[10%] border-r border-white/20 px-2 py-3">Additional</th>
+              <th className="w-[16%] border-r border-white/20 px-2 py-3">Management</th>
+              <th className="w-[14%] bg-emerald-400/10 px-2 py-3 text-emerald-100">Totals</th>
             </tr>
           </thead>
           <tbody>
             {(calc?.rows ?? []).map((row) => {
-              const src = rows.find((r) => r.tenant_id === row.tenant_id)!;
+              const src = rows.find((item) => item.tenant_id === row.tenant_id)!;
+              const field = (label: string, content: ReactNode) => (
+                <div className="space-y-1">
+                  <div className="text-[10px] uppercase tracking-wide text-slate-500">{label}</div>
+                  <div>{content}</div>
+                </div>
+              );
               return (
-                <tr key={row.tenant_id} className="border-t border-white/10">
-                  <td className="px-2 py-2">{src.room_no}</td>
-                  <td className="border-r border-white/10 px-2 py-2">
-                    <span className="block truncate" title={src.tenant_name}>
-                      {src.tenant_name}
-                    </span>
+                <tr key={row.tenant_id} className="border-t border-white/10 align-top">
+                  <td className="min-w-0 border-r border-white/10 px-2 py-3">
+                    <div className="font-semibold text-white">{src.room_no}</div>
+                    <div className="mt-2 truncate text-slate-300" title={src.tenant_name}>{src.tenant_name}</div>
                   </td>
-                  <td className="px-2 py-2">
-                    <input className="w-full rounded-lg border border-white/10 bg-slate-950 px-2 py-1 text-white" type="number" value={src.previous_reading} onChange={(e) => updateRow(src.tenant_id, 'previous_reading', Number(e.target.value))} />
+                  <td className="min-w-0 border-r border-white/10 px-2 py-3">
+                    <div className="space-y-3">
+                      {field('Previous', <EmptyableNumberInput className="w-full rounded-lg border border-white/10 bg-slate-950 px-2 py-1 text-white" value={src.previous_reading} onChange={(value) => updateRow(src.tenant_id, 'previous_reading', value)} />)}
+                      {field('Present', <EmptyableNumberInput className="w-full rounded-lg border border-white/10 bg-slate-950 px-2 py-1 text-white" value={src.present_reading} onChange={(value) => updateRow(src.tenant_id, 'present_reading', value)} />)}
+                    </div>
                   </td>
-                  <td className="border-r border-white/10 px-2 py-2">
-                    <input className="w-full rounded-lg border border-white/10 bg-slate-950 px-2 py-1 text-white" type="number" value={src.present_reading} onChange={(e) => updateRow(src.tenant_id, 'present_reading', Number(e.target.value))} />
+                  <td className="min-w-0 border-r border-white/10 px-2 py-3">
+                    <div className="space-y-3">
+                      {field('Used', isManual ? manualNumberInput(row.consumed_unit, (value) => updateRow(src.tenant_id, 'present_reading', Number((src.previous_reading + value).toFixed(2)))) : <span className="text-white">{row.consumed_unit.toFixed(2)}</span>)}
+                      {field('Unit price', isManual ? manualNumberInput(src.energy_unit_price, (value) => setRows((current) => current.map((item) => item.tenant_id === src.tenant_id ? { ...item, energy_unit_price: value, energy_adjust: 0 } : item))) : <span className="text-white">{bill?.energy_unit_price.toFixed(2) ?? '0.00'}</span>)}
+                      {field('Charge', isManual ? manualNumberInput(row.energy_charge, (value) => updateRow(src.tenant_id, 'energy_adjust', Number((value - row.energy_charge_calc).toFixed(2)))) : <span className="text-white">{row.energy_charge.toFixed(2)}</span>)}
+                    </div>
                   </td>
-                  <td className="px-2 py-2">{row.consumed_unit.toFixed(2)}</td>
-                  <td className="border-r border-white/10 px-2 py-2">{row.energy_charge.toFixed(2)}</td>
-                  <td className="px-2 py-2">{renderFixedUnitCell(src, row)}</td>
-                  <td className="border-r border-white/10 px-2 py-2">{renderChargeCell(src, row, 'fixed_adjust')}</td>
-                  <td className="px-2 py-2">{renderChargeCell(src, row, 'extra_adjust')}</td>
-                  <td className="border-r border-white/10 px-2 py-2">{row.tax.toFixed(2)}</td>
-                  <td className="border-r border-white/10 bg-orange-400/10 px-2 py-2 font-medium text-orange-100">{row.sub_total.toFixed(2)}</td>
-                  <td className="px-2 py-2">{renderChargeCell(src, row, 'interest_adjust')}</td>
-                  <td className="border-r border-white/10 px-2 py-2">{renderChargeCell(src, row, 'other_adjust')}</td>
-                  <td className="bg-emerald-400/10 px-2 py-2 font-semibold text-emerald-100">{row.payable.toFixed(2)}</td>
+                  <td className="min-w-0 border-r border-white/10 px-2 py-3">
+                    <div className="space-y-3">
+                      {field('Units', isManual ? renderManualFixedUnitInput(src) : renderFixedUnitCell(src, row))}
+                      {field('Unit price', isManual ? manualNumberInput(src.fixed_unit_price, (value) => setRows((current) => current.map((item) => item.tenant_id === src.tenant_id ? { ...item, fixed_unit_price: value, fixed_adjust: Number((item.fixed_unit * value).toFixed(2)) } : item))) : <span className="text-white">{bill?.fixed_unit_price.toFixed(2) ?? '0.00'}</span>)}
+                      {field('Charge', isManual ? manualNumberInput(src.fixed_adjust, (value) => setRows((current) => current.map((item) => item.tenant_id === src.tenant_id ? { ...item, fixed_adjust: value, fixed_unit: item.fixed_unit_price > 0 ? Number((value / item.fixed_unit_price).toFixed(2)) : item.fixed_unit } : item))) : renderChargeCell(src, row, 'fixed_adjust'))}
+                    </div>
+                  </td>
+                  <td className="min-w-0 border-r border-white/10 px-2 py-3">
+                    <div className="space-y-3">
+                      {field('Extra', isManual ? renderManualChargeInput(src, 'extra_adjust') : renderChargeCell(src, row, 'extra_adjust'))}
+                      {field('Tax', isManual ? manualNumberInput(row.tax, (value) => updateRow(src.tenant_id, 'tax_adjust', Number((value - (row.tax - src.tax_adjust)).toFixed(2)))) : <span className="text-white">{row.tax.toFixed(2)}</span>)}
+                    </div>
+                  </td>
+                  <td className="min-w-0 border-r border-white/10 px-2 py-3">
+                    <div className="space-y-3">
+                      {field('Interest', isManual ? renderManualChargeInput(src, 'interest_adjust') : renderChargeCell(src, row, 'interest_adjust'))}
+                      {field('Other', isManual ? renderManualChargeInput(src, 'other_adjust') : renderChargeCell(src, row, 'other_adjust'))}
+                    </div>
+                  </td>
+                  <td className="min-w-0 border-r border-white/10 px-2 py-3">
+                    <div className="space-y-3">
+                      {field('Maintenance', manualNumberInput(src.maintenance_fee, (value) => updateRow(src.tenant_id, 'maintenance_fee', value)))}
+                      {field('Generator', manualNumberInput(src.generator_fee, (value) => updateRow(src.tenant_id, 'generator_fee', value)))}
+                      {field('Extra fee', manualNumberInput(src.management_extra_fee, (value) => updateRow(src.tenant_id, 'management_extra_fee', value)))}
+                    </div>
+                  </td>
+                  <td className="min-w-0 bg-emerald-400/10 px-2 py-3">
+                    <div className="space-y-4">
+                      {field('Subtotal', <span className="font-semibold text-orange-100">{row.electricity_total.toFixed(2)}</span>)}
+                      {field('Management fees', <span className="font-semibold text-sky-100">{row.management_total.toFixed(2)}</span>)}
+                      {field('Payable', <span className="font-semibold text-emerald-100">{row.payable.toFixed(2)}</span>)}
+                    </div>
+                  </td>
                 </tr>
               );
             })}
           </tbody>
           <tfoot className="border-t border-white/10 bg-white/5 text-white">
             <tr>
-              <td className="px-2 py-3 text-right font-semibold text-slate-300" colSpan={13}>
-                Total Payable
-              </td>
-              <td className="bg-emerald-400/10 px-2 py-3 font-semibold text-emerald-100">
-                Rs {(calc?.totals.payable ?? 0).toFixed(2)}
-              </td>
+              <td className="px-3 py-3 text-right font-semibold text-slate-300" colSpan={7}>Total Payable</td>
+              <td className="bg-emerald-400/10 px-3 py-3 font-semibold text-emerald-100">Rs {(calc?.totals.payable ?? 0).toFixed(2)}</td>
             </tr>
           </tfoot>
         </table>
@@ -803,12 +1030,10 @@ export default function BillSplit() {
                 <tr>
                   <th className="px-4 py-3">Tenant name (Room)</th>
                   <th className="px-4 py-3">Period</th>
-                  <th className="px-4 py-3">Previous</th>
-                  <th className="px-4 py-3">Present</th>
-                  <th className="px-4 py-3">Used</th>
+                  <th className="px-4 py-3">Electricity fees</th>
+                  <th className="px-4 py-3">Management fees</th>
                   <th className="px-4 py-3">Payable</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Method</th>
+                  <th className="px-4 py-3">Payment</th>
                   <th className="px-4 py-3">Payment date</th>
                   <th className="px-4 py-3">Reminder</th>
                   <th className="px-4 py-3">Payment update</th>
@@ -829,16 +1054,14 @@ export default function BillSplit() {
                         {'/'}
                         {bill?.period_year ?? '-'}
                       </td>
-                      <td className="px-4 py-3">{row.previous_reading.toFixed(2)}</td>
-                      <td className="px-4 py-3">{row.present_reading.toFixed(2)}</td>
-                      <td className="px-4 py-3">{row.consumed_unit?.toFixed(2) ?? '0.00'}</td>
+                      <td className="px-4 py-3">Rs {row.electricity_total?.toFixed(2) ?? '0.00'}</td>
+                      <td className="px-4 py-3">Rs {row.management_total?.toFixed(2) ?? '0.00'}</td>
                       <td className="px-4 py-3">Rs {row.payable?.toFixed(2) ?? '0.00'}</td>
                       <td className="px-4 py-3">
                         <span className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${getPaymentStatusClass(row.payment_status ?? 'pending')}`}>
                           {row.payment_status === 'paid' ? 'Paid' : 'Pending'}
                         </span>
                       </td>
-                      <td className="px-4 py-3">{row.payment_method ?? '-'}</td>
                       <td className="px-4 py-3">{formatDate(row.payment_date ?? null)}</td>
                       <td className="px-4 py-3">
                         {canRemind ? (
@@ -855,9 +1078,10 @@ export default function BillSplit() {
                       <td className="px-4 py-3">
                         <button
                           className="rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-brand-400"
-                          onClick={() => openPayment(row)}
+                          disabled={paymentUpdatingId === row.id}
+                          onClick={() => void togglePayment(row)}
                         >
-                          Update
+                          {paymentUpdatingId === row.id ? 'Saving...' : row.payment_status === 'paid' ? 'Unpay' : 'Paid'}
                         </button>
                       </td>
                     </tr>
@@ -883,33 +1107,6 @@ export default function BillSplit() {
         onConfirm={sendReminder}
       />
 
-      <PaymentUpdateModal
-        open={payment.open}
-        title="Update payment"
-        message={
-          payment.row
-            ? `Change the payment status and method for the electricity bill of ${bill?.period_month ?? '-'} / ${bill?.period_year ?? '-'}.`
-            : ''
-        }
-        error={payment.error}
-        busy={payment.saving}
-        status={payment.status}
-        method={payment.method}
-        paymentDate={payment.paymentDate}
-        showPaymentDate
-        onClose={closePayment}
-        onConfirm={savePayment}
-        onStatusChange={(status) =>
-          setPayment((prev) => ({
-            ...prev,
-            status,
-            method: status === 'paid' ? prev.method : '',
-            paymentDate: status === 'paid' ? prev.paymentDate : todayIso(),
-          }))
-        }
-        onMethodChange={(method) => setPayment((prev) => ({ ...prev, method }))}
-        onPaymentDateChange={(paymentDate) => setPayment((prev) => ({ ...prev, paymentDate }))}
-      />
     </div>
   );
 }

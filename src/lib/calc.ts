@@ -3,9 +3,17 @@ export type SplitBillRowInput = {
   previous_reading: number;
   present_reading: number;
   fixed_adjust: number;
+  fixed_unit?: number;
+  fixed_unit_price?: number;
+  energy_unit_price?: number;
+  energy_adjust?: number;
   extra_adjust: number;
+  tax_adjust?: number;
   interest_adjust: number;
   other_adjust?: number;
+  maintenance_fee?: number;
+  generator_fee?: number;
+  management_extra_fee?: number;
 };
 
 export type SplitBillInput = {
@@ -44,20 +52,24 @@ export function calculateSplit(input: SplitBillInput) {
     const extra_charge_calc = input.bill.extra_charge * ratio;
     const interest_charge_calc = input.bill.interest_charge * ratio;
     const other_charge_calc = input.bill.other_charge * ratio;
-    const energy_charge_calc = row.consumed_unit * input.bill.energy_unit_price;
+    const energy_unit_price = row.energy_unit_price ?? input.bill.energy_unit_price;
+    const energy_charge_calc = row.consumed_unit * energy_unit_price;
     const fixed_total = fixed_charge_calc + row.fixed_adjust;
-    const energy_total = energy_charge_calc;
+    const energy_total = energy_charge_calc + (row.energy_adjust ?? 0);
     const extra_total = extra_charge_calc + row.extra_adjust;
     const interest_total = interest_charge_calc + row.interest_adjust;
     const other_total = other_charge_calc + (row.other_adjust ?? 0);
-    const tax = (fixed_total + energy_total + extra_total) * (input.split.tax_rate / 100);
+    const tax = (fixed_total + energy_total + extra_total) * (input.split.tax_rate / 100) + (row.tax_adjust ?? 0);
     const sub_total = fixed_total + energy_total + extra_total + tax;
-    const payable = sub_total + interest_total + other_total;
+    const electricity_total = sub_total + interest_total + other_total;
+    const management_total = (row.maintenance_fee ?? 0) + (row.generator_fee ?? 0) + (row.management_extra_fee ?? 0);
+    const payable = electricity_total + management_total;
 
     return {
       ...row,
       ratio,
       fixed_charge_calc: round(fixed_charge_calc),
+      energy_unit_price: round(energy_unit_price),
       energy_charge_calc: round(energy_charge_calc),
       energy_charge: round(energy_total),
       extra_charge_calc: round(extra_charge_calc),
@@ -66,6 +78,8 @@ export function calculateSplit(input: SplitBillInput) {
       interest_charge_calc: round(interest_charge_calc),
       other_charge_calc: round(other_charge_calc),
       other_charge: round(other_total),
+      electricity_total: round(electricity_total),
+      management_total: round(management_total),
       payable: round(payable),
       consumed_unit: round(row.consumed_unit),
     };
@@ -85,6 +99,8 @@ export function calculateSplit(input: SplitBillInput) {
       interest_charge: round(acc.interest_charge + row.interest_charge_calc + row.interest_adjust),
       other_charge_calc: round(acc.other_charge_calc + row.other_charge_calc),
       other_charge: round(acc.other_charge + (row.other_charge ?? row.other_charge_calc + (row.other_adjust ?? 0))),
+      electricity_total: round(acc.electricity_total + row.electricity_total),
+      management_total: round(acc.management_total + row.management_total),
       payable: round(acc.payable + row.payable),
     }),
     {
@@ -100,6 +116,8 @@ export function calculateSplit(input: SplitBillInput) {
       interest_charge: 0,
       other_charge_calc: 0,
       other_charge: 0,
+      electricity_total: 0,
+      management_total: 0,
       payable: 0,
     },
   );

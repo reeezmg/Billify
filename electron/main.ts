@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, net } from 'electron';
 import updaterPkg from 'electron-updater';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -33,6 +33,24 @@ type UpdateWindowState = {
 
 function normalizeVersion(value: string | null | undefined) {
   return String(value ?? '').trim().replace(/^v/i, '');
+}
+
+function isNetworkError(error: unknown) {
+  const code = String((error as { code?: unknown })?.code ?? '').toUpperCase();
+  const message = String((error as { message?: unknown })?.message ?? error ?? '').toUpperCase();
+  const networkMarkers = [
+    'ERR_INTERNET_DISCONNECTED',
+    'ERR_NETWORK_CHANGED',
+    'ERR_NAME_NOT_RESOLVED',
+    'ENOTFOUND',
+    'EAI_AGAIN',
+    'ECONNREFUSED',
+    'ECONNRESET',
+    'ETIMEDOUT',
+    'GETADDRINFO',
+    'NETWORK IS UNREACHABLE',
+  ];
+  return networkMarkers.some((marker) => code.includes(marker) || message.includes(marker));
 }
 
 async function createMainWindow() {
@@ -323,6 +341,13 @@ async function closeUpdateWindowBeforeOpeningApp() {
   });
 }
 
+async function openCurrentVersion() {
+  await closeUpdateWindowBeforeOpeningApp();
+  await openMainWindow();
+  openingMainWindowAfterUpdate = false;
+  allowUpdateWindowCloseWithoutQuit = false;
+}
+
 async function startBlockingUpdateFlow() {
   if (updateCheckInProgress) {
     return;
@@ -330,6 +355,11 @@ async function startBlockingUpdateFlow() {
   updateCheckInProgress = true;
 
   try {
+    if (!net.isOnline()) {
+      await openCurrentVersion();
+      return;
+    }
+
     await ensureUpdateWindow();
     sendUpdateState({
       title: 'Checking for updates',
@@ -348,10 +378,7 @@ async function startBlockingUpdateFlow() {
     const currentVersion = normalizeVersion(app.getVersion());
 
     if (!latestVersion || latestVersion === currentVersion) {
-      await closeUpdateWindowBeforeOpeningApp();
-      await openMainWindow();
-      openingMainWindowAfterUpdate = false;
-      allowUpdateWindowCloseWithoutQuit = false;
+      await openCurrentVersion();
       return;
     }
 
@@ -416,6 +443,10 @@ async function startBlockingUpdateFlow() {
     });
   } catch (error: any) {
     console.error('Auto update error:', error);
+    if (!net.isOnline() || isNetworkError(error)) {
+      await openCurrentVersion();
+      return;
+    }
     sendUpdateState({
       title: 'Update required',
       message: error?.message
@@ -437,10 +468,7 @@ ipcMain.on('update:retry', () => {
 });
 
 ipcMain.on('update:continue', async () => {
-  await closeUpdateWindowBeforeOpeningApp();
-  await openMainWindow();
-  openingMainWindowAfterUpdate = false;
-  allowUpdateWindowCloseWithoutQuit = false;
+  await openCurrentVersion();
 });
 
 ipcMain.on('update:exit', () => {
