@@ -299,7 +299,13 @@ export default function BillSplit() {
         return { ...row, tax_adjust: 0 };
       }),
     );
-    setBill((current) => (current ? { ...current, [field]: value } : current));
+    setBill((current) => {
+      if (!current) return current;
+      if (field === 'extra_unit_price') {
+        return { ...current, extra_unit_price: value, extra_unit_charge: Number((current.energy_unit * value).toFixed(2)) };
+      }
+      return { ...current, [field]: value };
+    });
   };
 
   const updateRow = (
@@ -526,6 +532,8 @@ export default function BillSplit() {
         };
         await window.api.bills.save(updatedBill);
         setBill(updatedBill);
+      } else if (!isManual) {
+        await window.api.bills.save(bill);
       }
       await window.api.splits.save({
         split_id: split.id,
@@ -769,7 +777,7 @@ export default function BillSplit() {
           <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
             <div className="grid gap-3 lg:grid-cols-12">
               <div className="rounded-2xl border border-white/10 bg-slate-950/35 px-4 py-3 lg:col-span-12">
-                <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
                   <div className="min-w-0">
                     <div className="text-xs text-slate-400">Bill period</div>
                     <div className="mt-1 truncate text-white">
@@ -791,6 +799,14 @@ export default function BillSplit() {
                       className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950 px-2 py-1.5 text-sm text-white"
                       value={split?.reading_date ?? ''}
                       onChange={(e) => setSplit((prev: any) => ({ ...prev, reading_date: e.target.value }))}
+                    />
+                  </label>
+                  <label className="min-w-0">
+                    <div className="text-xs text-slate-400">Extra unit price</div>
+                    <EmptyableNumberInput
+                      className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950 px-2 py-1.5 text-sm text-white"
+                      value={bill.extra_unit_price}
+                      onChange={(value) => updateManualBillValue('extra_unit_price', value)}
                     />
                   </label>
                 </div>
