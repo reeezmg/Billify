@@ -47,6 +47,8 @@ export default function MyBills() {
   const [billMode, setBillMode] = useState<BillMode>('auto');
   const [form, setForm] = useState<BillFormState>(createInitialForm());
   const [formError, setFormError] = useState('');
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [listError, setListError] = useState('');
   const navigate = useNavigate();
 
   const fixedUnit = parseDecimal(form.fixed_unit);
@@ -72,6 +74,28 @@ export default function MyBills() {
   };
 
   const refresh = async () => setBills(await window.api.bills.list());
+
+  const deleteBill = async (bill: Bill) => {
+    const warning =
+      (bill.pending_count ?? 0) > 0 || (bill.tenant_count ?? 0) > 0
+        ? ` This will also permanently delete its tenant split and payment records (${bill.tenant_count ?? 0} tenant${
+            bill.tenant_count === 1 ? '' : 's'
+          }).`
+        : '';
+    const confirmed = window.confirm(`Delete the bill for ${bill.period_month}/${bill.period_year}?${warning} This cannot be undone.`);
+    if (!confirmed) return;
+
+    setDeletingId(bill.id);
+    setListError('');
+    try {
+      await window.api.bills.delete(bill.id);
+      await refresh();
+    } catch (err) {
+      setListError(err instanceof Error ? err.message : 'Unable to delete this bill.');
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const resetForm = () => {
     setEditingBillId(null);
@@ -366,6 +390,10 @@ export default function MyBills() {
         </div>
       ) : null}
 
+      {listError ? (
+        <div className="rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">{listError}</div>
+      ) : null}
+
       <div className="overflow-hidden rounded-3xl border border-white/10 bg-white/5">
         <table className="w-full text-left text-sm">
           <thead className="bg-white/5 text-slate-300">
@@ -411,6 +439,13 @@ export default function MyBills() {
                       onClick={() => navigate(`/bills/${bill.id}/split`)}
                     >
                       Open
+                    </button>
+                    <button
+                      className="rounded-lg border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-rose-100 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                      onClick={() => deleteBill(bill)}
+                      disabled={deletingId === bill.id}
+                    >
+                      {deletingId === bill.id ? 'Deleting…' : 'Delete'}
                     </button>
                   </div>
                 </td>

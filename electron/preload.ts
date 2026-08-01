@@ -56,6 +56,7 @@ const api = {
     create: (bill: Omit<Bill, 'id'>) => ipcRenderer.invoke('bills:create', bill),
     save: (bill: Partial<Bill>) => ipcRenderer.invoke('bills:save', bill),
     get: (id: number) => ipcRenderer.invoke('bills:get', id) as Promise<Bill | null>,
+    delete: (id: number) => ipcRenderer.invoke('bills:delete', id),
     getOrCreateSplit: (billId: number) => ipcRenderer.invoke('bills:getOrCreateSplit', billId) as Promise<BillSplit | null>,
   },
   splits: {

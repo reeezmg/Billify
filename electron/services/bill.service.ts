@@ -130,6 +130,11 @@ export async function getBill(id: number) {
   return queryOne<Bill>('SELECT * FROM bills WHERE id = ?', [id]);
 }
 
+export async function deleteBill(id: number) {
+  await execute('DELETE FROM bills WHERE id = ?', [id]);
+  return true;
+}
+
 export async function getOrCreateSplit(billId: number) {
   const existing = await queryOne<BillSplit>('SELECT * FROM bill_splits WHERE bill_id = ?', [billId]);
   if (existing) return existing;
