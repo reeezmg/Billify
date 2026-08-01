@@ -11,6 +11,7 @@ type BillFormState = {
   energy_unit: string;
   energy_unit_price: string;
   extra_charge: string;
+  extra_unit_price: string;
   interest_charge: string;
   other_charge: string;
   tax_percent: string;
@@ -26,6 +27,7 @@ const createInitialForm = (): BillFormState => ({
   energy_unit: '0.00',
   energy_unit_price: '0.00',
   extra_charge: '0.00',
+  extra_unit_price: '0.00',
   interest_charge: '0.00',
   other_charge: '0.00',
   tax_percent: '0.00',
@@ -56,15 +58,17 @@ export default function MyBills() {
   const energyUnit = parseDecimal(form.energy_unit);
   const energyUnitPrice = parseDecimal(form.energy_unit_price);
   const extraCharge = parseDecimal(form.extra_charge);
+  const extraUnitPrice = parseDecimal(form.extra_unit_price);
   const interestCharge = parseDecimal(form.interest_charge);
   const otherCharge = parseDecimal(form.other_charge);
   const taxPercent = parseDecimal(form.tax_percent);
 
   const liveFixed = fixedUnit * fixedUnitPrice;
   const liveEnergy = energyUnit * energyUnitPrice;
-  const liveTaxableBase = liveFixed + liveEnergy + extraCharge;
+  const liveExtraUnitCharge = energyUnit * extraUnitPrice;
+  const liveTaxableBase = liveFixed + liveEnergy + extraCharge + liveExtraUnitCharge;
   const liveTax = liveTaxableBase * (taxPercent / 100);
-  const liveTotal = liveFixed + liveEnergy + extraCharge + liveTax + interestCharge + otherCharge;
+  const liveTotal = liveFixed + liveEnergy + extraCharge + liveExtraUnitCharge + liveTax + interestCharge + otherCharge;
 
   const formatSplitStatus = (status?: Bill['split_status']) => {
     if (status && status !== 'draft') {
@@ -122,6 +126,7 @@ export default function MyBills() {
       energy_unit: bill.energy_unit.toFixed(2),
       energy_unit_price: bill.energy_unit_price.toFixed(2),
       extra_charge: bill.extra_charge.toFixed(2),
+      extra_unit_price: (bill.extra_unit_price ?? 0).toFixed(2),
       interest_charge: bill.interest_charge.toFixed(2),
       other_charge: bill.other_charge.toFixed(2),
       tax_percent: (bill.tax_percent > 0 ? bill.tax_percent : derivedTaxPercent).toFixed(2),
@@ -204,6 +209,8 @@ export default function MyBills() {
                     energy_unit_price: useEmptyManualBill ? 0 : energyUnitPrice,
                     energy_charge: useEmptyManualBill ? 0 : liveEnergy,
                     extra_charge: useEmptyManualBill ? 0 : extraCharge,
+                    extra_unit_price: useEmptyManualBill ? 0 : extraUnitPrice,
+                    extra_unit_charge: useEmptyManualBill ? 0 : liveExtraUnitCharge,
                     interest_charge: useEmptyManualBill ? 0 : interestCharge,
                     other_charge: useEmptyManualBill ? 0 : otherCharge,
                     tax_percent: useEmptyManualBill ? 0 : taxPercent,
@@ -313,6 +320,18 @@ export default function MyBills() {
                   />
                 </label>
                 <label className="space-y-2 text-sm text-slate-300">
+                  <div>Extra unit price</div>
+                  <input
+                    type="number"
+                    step="0.01"
+                    className="w-full max-w-xs rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-white"
+                    value={form.extra_unit_price}
+                    onChange={(e) => setForm((prev) => ({ ...prev, extra_unit_price: e.target.value }))}
+                    onFocus={focusSelectAll}
+                  />
+                  <div className="text-xs text-slate-400">Extra unit charge: Rs {liveExtraUnitCharge.toFixed(2)}</div>
+                </label>
+                <label className="space-y-2 text-sm text-slate-300">
                   <div>Tax %</div>
                   <input
                     type="number"
@@ -350,7 +369,7 @@ export default function MyBills() {
               </div>
 
               {billMode === 'auto' ? (
-              <div className="grid gap-3 rounded-3xl border border-white/10 bg-white/5 p-4 md:grid-cols-3">
+              <div className="grid gap-3 rounded-3xl border border-white/10 bg-white/5 p-4 md:grid-cols-4">
                 <div className="flex flex-col gap-1 text-sm">
                   <span className="text-slate-300">Fixed charge</span>
                   <span className="text-white">Rs {liveFixed.toFixed(2)}</span>
@@ -358,6 +377,10 @@ export default function MyBills() {
                 <div className="flex flex-col gap-1 text-sm">
                   <span className="text-slate-300">Consumed charge</span>
                   <span className="text-white">Rs {liveEnergy.toFixed(2)}</span>
+                </div>
+                <div className="flex flex-col gap-1 text-sm">
+                  <span className="text-slate-300">Extra unit charge</span>
+                  <span className="text-white">Rs {liveExtraUnitCharge.toFixed(2)}</span>
                 </div>
                 <div className="flex flex-col gap-1 text-sm">
                   <span className="text-slate-300">Live total</span>

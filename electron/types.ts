@@ -34,6 +34,8 @@ export type BillRecord = {
   energy_unit_price: number;
   energy_charge: number;
   extra_charge: number;
+  extra_unit_price: number;
+  extra_unit_charge: number;
   tax: number;
   tax_percent: number;
   interest_charge: number;
@@ -63,6 +65,10 @@ export type TenantBillRecord = {
   energy_charge: number;
   extra_charge_calc: number;
   extra_adjust: number;
+  extra_unit_price?: number;
+  extra_unit_charge_calc?: number;
+  extra_unit_adjust?: number;
+  extra_unit_charge?: number;
   tax: number;
   sub_total: number;
   interest_charge_calc: number;
@@ -96,6 +102,8 @@ export type SplitBillRowInput = {
   energy_unit_price?: number;
   energy_adjust?: number;
   extra_adjust: number;
+  extra_unit_price?: number;
+  extra_unit_adjust?: number;
   tax_adjust?: number;
   interest_adjust: number;
   other_adjust?: number;
@@ -110,6 +118,8 @@ export type SplitBillInput = {
     energy_charge: number;
     energy_unit_price: number;
     extra_charge: number;
+    extra_unit_price: number;
+    extra_unit_charge: number;
     tax: number;
     interest_charge: number;
     other_charge: number;
@@ -126,6 +136,8 @@ export type SplitBillRow = SplitBillRowInput & {
   energy_charge_calc?: number;
   energy_charge: number;
   extra_charge_calc: number;
+  extra_unit_charge_calc: number;
+  extra_unit_charge: number;
   tax: number;
   sub_total: number;
   interest_charge_calc: number;
@@ -146,6 +158,8 @@ export type SplitBillResult = {
     energy_charge: number;
     extra_charge_calc: number;
     extra_charge?: number;
+    extra_unit_charge_calc: number;
+    extra_unit_charge: number;
     tax: number;
     sub_total: number;
     interest_charge_calc: number;
@@ -160,6 +174,7 @@ export type SplitBillResult = {
     fixed_diff: number;
     energy_diff: number;
     extra_diff: number;
+    extra_unit_diff: number;
     tax_diff: number;
     interest_diff: number;
     other_diff: number;

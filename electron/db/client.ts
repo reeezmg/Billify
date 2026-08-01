@@ -201,6 +201,32 @@ async function createDb() {
     'payment_date',
     'payment_date TEXT',
   );
+  const billExtraUnitPriceChanged = ensureColumn(database, 'bills', 'extra_unit_price', 'extra_unit_price REAL NOT NULL DEFAULT 0');
+  const billExtraUnitChargeChanged = ensureColumn(database, 'bills', 'extra_unit_charge', 'extra_unit_charge REAL NOT NULL DEFAULT 0');
+  const tenantBillExtraUnitPriceChanged = ensureColumn(
+    database,
+    'tenant_bills',
+    'extra_unit_price',
+    'extra_unit_price REAL NOT NULL DEFAULT 0',
+  );
+  const tenantBillExtraUnitChargeCalcChanged = ensureColumn(
+    database,
+    'tenant_bills',
+    'extra_unit_charge_calc',
+    'extra_unit_charge_calc REAL NOT NULL DEFAULT 0',
+  );
+  const tenantBillExtraUnitAdjustChanged = ensureColumn(
+    database,
+    'tenant_bills',
+    'extra_unit_adjust',
+    'extra_unit_adjust REAL NOT NULL DEFAULT 0',
+  );
+  const tenantBillExtraUnitChargeChanged = ensureColumn(
+    database,
+    'tenant_bills',
+    'extra_unit_charge',
+    'extra_unit_charge REAL NOT NULL DEFAULT 0',
+  );
   const configRenameApplied = (() => {
     database.run(`
       INSERT OR IGNORE INTO app_config (key, value)
@@ -244,6 +270,12 @@ async function createDb() {
     tenantBillPaymentStatusChanged ||
     tenantBillPaymentMethodChanged ||
     tenantBillPaymentDateChanged ||
+    billExtraUnitPriceChanged ||
+    billExtraUnitChargeChanged ||
+    tenantBillExtraUnitPriceChanged ||
+    tenantBillExtraUnitChargeCalcChanged ||
+    tenantBillExtraUnitAdjustChanged ||
+    tenantBillExtraUnitChargeChanged ||
     configRenameApplied
   ) {
     persist(database);

@@ -35,6 +35,8 @@ export type Bill = {
   energy_unit_price: number;
   energy_charge: number;
   extra_charge: number;
+  extra_unit_price: number;
+  extra_unit_charge: number;
   tax: number;
   tax_percent: number;
   interest_charge: number;
@@ -70,6 +72,10 @@ export type TenantBill = {
   energy_charge: number;
   extra_charge_calc: number;
   extra_adjust: number;
+  extra_unit_price?: number;
+  extra_unit_charge_calc?: number;
+  extra_unit_adjust?: number;
+  extra_unit_charge?: number;
   tax: number;
   tax_adjust?: number;
   sub_total: number;

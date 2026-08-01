@@ -922,10 +922,19 @@ export function createBrowserApi() {
           const bills = [...state.bills];
           const fixedCharge = bill.fixed_charge ?? (bill.fixed_unit ?? 0) * (bill.fixed_unit_price ?? 0);
           const energyCharge = bill.energy_charge ?? (bill.energy_unit ?? 0) * (bill.energy_unit_price ?? 0);
-          const taxAmount = bill.tax ?? (fixedCharge + energyCharge + (bill.extra_charge ?? 0)) * ((bill.tax_percent ?? 0) / 100);
+          const extraUnitCharge = bill.extra_unit_charge ?? (bill.energy_unit ?? 0) * (bill.extra_unit_price ?? 0);
+          const taxAmount =
+            bill.tax ??
+            (fixedCharge + energyCharge + (bill.extra_charge ?? 0) + extraUnitCharge) * ((bill.tax_percent ?? 0) / 100);
           const total =
             bill.total ??
-            fixedCharge + energyCharge + (bill.extra_charge ?? 0) + taxAmount + (bill.interest_charge ?? 0) + (bill.other_charge ?? 0);
+            fixedCharge +
+              energyCharge +
+              (bill.extra_charge ?? 0) +
+              extraUnitCharge +
+              taxAmount +
+              (bill.interest_charge ?? 0) +
+              (bill.other_charge ?? 0);
           const payload = {
             entry_mode: bill.entry_mode ?? 'auto',
             period_month: bill.period_month ?? new Date().getMonth() + 1,
@@ -937,6 +946,8 @@ export function createBrowserApi() {
             energy_unit_price: bill.energy_unit_price ?? 0,
             energy_charge: energyCharge,
             extra_charge: bill.extra_charge ?? 0,
+            extra_unit_price: bill.extra_unit_price ?? 0,
+            extra_unit_charge: extraUnitCharge,
             tax: taxAmount,
             tax_percent: bill.tax_percent ?? 0,
             interest_charge: bill.interest_charge ?? 0,
@@ -1028,6 +1039,7 @@ export function createBrowserApi() {
               fixed_unit: bill.fixed_unit,
               fixed_unit_price: bill.fixed_unit_price,
               energy_unit_price: bill.energy_unit_price,
+              extra_unit_price: bill.extra_unit_price,
               tax_percent: bill.tax_percent,
             },
             split: {
@@ -1150,6 +1162,7 @@ export function createBrowserApi() {
                 fixed_unit: bill.fixed_unit,
                 fixed_unit_price: bill.fixed_unit_price,
                 energy_unit_price: bill.energy_unit_price,
+                extra_unit_price: bill.extra_unit_price,
                 tax_percent: bill.tax_percent,
               },
               split: {

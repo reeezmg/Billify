@@ -61,10 +61,11 @@ export function registerSplitsIpc() {
       const insert = db.prepare(
         `INSERT INTO tenant_bills
           (bill_split_id, tenant_id, previous_reading, present_reading, consumed_unit, fixed_charge_calc, fixed_adjust,
-           fixed_unit, fixed_unit_price, energy_unit_price, energy_charge, energy_adjust, extra_charge_calc, extra_adjust, tax, tax_adjust, sub_total, interest_charge_calc, interest_adjust,
+           fixed_unit, fixed_unit_price, energy_unit_price, energy_charge, energy_adjust, extra_charge_calc, extra_adjust,
+           extra_unit_price, extra_unit_charge_calc, extra_unit_adjust, extra_unit_charge, tax, tax_adjust, sub_total, interest_charge_calc, interest_adjust,
            other_charge_calc, other_adjust, maintenance_fee, generator_fee, management_extra_fee, management_total,
            payment_status, payment_method, payment_date, payable)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       for (const calc of calculated.rows) {
         const row = payload.rows.find((item: any) => item.tenant_id === calc.tenant_id);
@@ -84,6 +85,10 @@ export function registerSplitsIpc() {
           row?.energy_adjust ?? 0,
           calc.extra_charge_calc,
           row?.extra_adjust ?? 0,
+          row?.extra_unit_price ?? payload.bill.extra_unit_price ?? 0,
+          calc.extra_unit_charge_calc,
+          row?.extra_unit_adjust ?? 0,
+          calc.extra_unit_charge,
           calc.tax,
           row?.tax_adjust ?? 0,
           calc.sub_total,

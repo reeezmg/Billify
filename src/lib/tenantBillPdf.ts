@@ -10,6 +10,7 @@ type TenantBillPdfContext = {
     fixed_unit: number;
     fixed_unit_price: number;
     energy_unit_price: number;
+    extra_unit_price: number;
     tax_percent: number;
   };
   split: {
@@ -95,6 +96,8 @@ export async function buildTenantBillPdfBytes(context: TenantBillPdfContext) {
     const tenantFixedAmount = row.fixed_charge_calc + row.fixed_adjust;
     const tenantFixedUnitPrice = row.fixed_unit_price || bill.fixed_unit_price;
     const tenantEnergyUnitPrice = row.energy_unit_price || bill.energy_unit_price;
+    const tenantExtraUnitPrice = row.extra_unit_price || bill.extra_unit_price;
+    const tenantExtraUnitCharge = row.extra_unit_charge ?? (row.extra_unit_charge_calc ?? 0) + (row.extra_unit_adjust ?? 0);
     const tenantFixedUnit = row.fixed_unit || (tenantFixedUnitPrice > 0 ? tenantFixedAmount / tenantFixedUnitPrice : 0);
 
     const drawBox = (x: number, y: number, width: number, height: number, fill = '#ffffff', stroke = borderColor) => {
@@ -186,6 +189,7 @@ export async function buildTenantBillPdfBytes(context: TenantBillPdfContext) {
     const chargeRows: Array<[string, string, number, boolean?]> = [
       ['Fixed Charge', `${formatNumber(tenantFixedUnit)} x ${formatNumber(tenantFixedUnitPrice)}`, tenantFixedAmount],
       ['Consumed Charge', `${formatNumber(row.consumed_unit)} x ${formatNumber(tenantEnergyUnitPrice)}`, row.energy_charge],
+      ['Extra Unit Charge', `${formatNumber(row.consumed_unit)} x ${formatNumber(tenantExtraUnitPrice)}`, tenantExtraUnitCharge],
       ['Extra Charge', '', row.extra_charge_calc + row.extra_adjust],
       ['Tax', `${formatNumber(bill.tax_percent)}%`, row.tax],
       ['Interest Charge', '', row.interest_charge_calc + row.interest_adjust],
@@ -215,7 +219,7 @@ export async function buildTenantBillPdfBytes(context: TenantBillPdfContext) {
     const managementRows: Array<[string, number, boolean?]> = [
       ['Maintenance Fee', row.maintenance_fee ?? 0],
       ['Generator Fee', row.generator_fee ?? 0],
-      ['Extra Fee', row.management_extra_fee ?? 0],
+      ['Extra Work Charges', row.management_extra_fee ?? 0],
       ['Management Total', row.management_total ?? 0, true],
     ];
     for (const [label, amount, bold] of managementRows) {

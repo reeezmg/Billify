@@ -34,15 +34,24 @@ export async function listBills() {
 export async function createBill(bill: Omit<Bill, 'id'>) {
   const fixedCharge = bill.fixed_charge ?? (bill.fixed_unit ?? 0) * (bill.fixed_unit_price ?? 0);
   const energyCharge = bill.energy_charge ?? (bill.energy_unit ?? 0) * (bill.energy_unit_price ?? 0);
-  const taxAmount = bill.tax ?? (fixedCharge + energyCharge + (bill.extra_charge ?? 0)) * ((bill.tax_percent ?? 0) / 100);
+  const extraUnitCharge = bill.extra_unit_charge ?? (bill.energy_unit ?? 0) * (bill.extra_unit_price ?? 0);
+  const taxAmount =
+    bill.tax ??
+    (fixedCharge + energyCharge + (bill.extra_charge ?? 0) + extraUnitCharge) * ((bill.tax_percent ?? 0) / 100);
   const total =
     bill.total ??
-    fixedCharge + energyCharge + (bill.extra_charge ?? 0) + taxAmount + (bill.interest_charge ?? 0) + (bill.other_charge ?? 0);
+    fixedCharge +
+      energyCharge +
+      (bill.extra_charge ?? 0) +
+      extraUnitCharge +
+      taxAmount +
+      (bill.interest_charge ?? 0) +
+      (bill.other_charge ?? 0);
 
   const result = await execute(
     `INSERT INTO bills
-      (entry_mode, period_month, period_year, fixed_unit, fixed_unit_price, fixed_charge, energy_unit, energy_unit_price, energy_charge, extra_charge, tax, tax_percent, interest_charge, other_charge, total)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (entry_mode, period_month, period_year, fixed_unit, fixed_unit_price, fixed_charge, energy_unit, energy_unit_price, energy_charge, extra_charge, extra_unit_price, extra_unit_charge, tax, tax_percent, interest_charge, other_charge, total)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       bill.entry_mode ?? 'auto',
       bill.period_month,
@@ -54,6 +63,8 @@ export async function createBill(bill: Omit<Bill, 'id'>) {
       bill.energy_unit_price,
       energyCharge,
       bill.extra_charge ?? 0,
+      bill.extra_unit_price ?? 0,
+      extraUnitCharge,
       taxAmount,
       bill.tax_percent ?? 0,
       bill.interest_charge ?? 0,
@@ -67,16 +78,25 @@ export async function createBill(bill: Omit<Bill, 'id'>) {
 export async function upsertBill(bill: Partial<Bill>) {
   const fixedCharge = bill.fixed_charge ?? (bill.fixed_unit ?? 0) * (bill.fixed_unit_price ?? 0);
   const energyCharge = bill.energy_charge ?? (bill.energy_unit ?? 0) * (bill.energy_unit_price ?? 0);
-  const taxAmount = bill.tax ?? (fixedCharge + energyCharge + (bill.extra_charge ?? 0)) * ((bill.tax_percent ?? 0) / 100);
+  const extraUnitCharge = bill.extra_unit_charge ?? (bill.energy_unit ?? 0) * (bill.extra_unit_price ?? 0);
+  const taxAmount =
+    bill.tax ??
+    (fixedCharge + energyCharge + (bill.extra_charge ?? 0) + extraUnitCharge) * ((bill.tax_percent ?? 0) / 100);
   const total =
     bill.total ??
-    fixedCharge + energyCharge + (bill.extra_charge ?? 0) + taxAmount + (bill.interest_charge ?? 0) + (bill.other_charge ?? 0);
+    fixedCharge +
+      energyCharge +
+      (bill.extra_charge ?? 0) +
+      extraUnitCharge +
+      taxAmount +
+      (bill.interest_charge ?? 0) +
+      (bill.other_charge ?? 0);
 
   if (bill.id) {
     await execute(
         `UPDATE bills
          SET entry_mode = ?, period_month = ?, period_year = ?, fixed_unit = ?, fixed_unit_price = ?, fixed_charge = ?, energy_unit = ?,
-             energy_unit_price = ?, energy_charge = ?, extra_charge = ?, tax = ?, tax_percent = ?, interest_charge = ?, other_charge = ?, total = ?,
+             energy_unit_price = ?, energy_charge = ?, extra_charge = ?, extra_unit_price = ?, extra_unit_charge = ?, tax = ?, tax_percent = ?, interest_charge = ?, other_charge = ?, total = ?,
              updated_at = datetime('now')
        WHERE id = ?`,
         [
@@ -90,6 +110,8 @@ export async function upsertBill(bill: Partial<Bill>) {
           bill.energy_unit_price,
           energyCharge,
           bill.extra_charge ?? 0,
+          bill.extra_unit_price ?? 0,
+          extraUnitCharge,
           taxAmount,
           bill.tax_percent ?? 0,
           bill.interest_charge ?? 0,
@@ -103,8 +125,8 @@ export async function upsertBill(bill: Partial<Bill>) {
 
   const result = await execute(
       `INSERT INTO bills
-      (entry_mode, period_month, period_year, fixed_unit, fixed_unit_price, fixed_charge, energy_unit, energy_unit_price, energy_charge, extra_charge, tax, tax_percent, interest_charge, other_charge, total)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (entry_mode, period_month, period_year, fixed_unit, fixed_unit_price, fixed_charge, energy_unit, energy_unit_price, energy_charge, extra_charge, extra_unit_price, extra_unit_charge, tax, tax_percent, interest_charge, other_charge, total)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         bill.entry_mode ?? 'auto',
         bill.period_month,
@@ -116,6 +138,8 @@ export async function upsertBill(bill: Partial<Bill>) {
         bill.energy_unit_price,
         energyCharge,
         bill.extra_charge ?? 0,
+        bill.extra_unit_price ?? 0,
+        extraUnitCharge,
         taxAmount,
         bill.tax_percent ?? 0,
         bill.interest_charge ?? 0,

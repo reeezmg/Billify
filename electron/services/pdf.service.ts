@@ -9,7 +9,7 @@ import { getSettings } from './settings.service';
 
 export async function generateTenantBillPdf(splitId: number, row: TenantBillWithTenant) {
   const split = await queryOne<any>(
-    `SELECT bs.reading_date, bs.id, b.period_month, b.period_year, b.fixed_unit, b.fixed_unit_price, b.energy_unit_price, b.tax_percent
+    `SELECT bs.reading_date, bs.id, b.period_month, b.period_year, b.fixed_unit, b.fixed_unit_price, b.energy_unit_price, b.extra_unit_price, b.tax_percent
      FROM bill_splits bs
      INNER JOIN bills b ON b.id = bs.bill_id
      WHERE bs.id = ?`,
@@ -26,6 +26,7 @@ export async function generateTenantBillPdf(splitId: number, row: TenantBillWith
       fixed_unit: split.fixed_unit,
       fixed_unit_price: split.fixed_unit_price,
       energy_unit_price: split.energy_unit_price,
+      extra_unit_price: split.extra_unit_price,
       tax_percent: split.tax_percent,
     },
     split: {
@@ -41,7 +42,7 @@ export async function generateTenantBillPdf(splitId: number, row: TenantBillWith
 
 export async function exportTenantBillPdfs(splitId: number, targetRootFolder: string) {
   const split = await queryOne<any>(
-    `SELECT bs.id, bs.reading_date, b.period_month, b.period_year, b.fixed_unit, b.fixed_unit_price, b.energy_unit_price, b.tax_percent
+    `SELECT bs.id, bs.reading_date, b.period_month, b.period_year, b.fixed_unit, b.fixed_unit_price, b.energy_unit_price, b.extra_unit_price, b.tax_percent
      FROM bill_splits bs
      INNER JOIN bills b ON b.id = bs.bill_id
      WHERE bs.id = ?`,
@@ -78,6 +79,7 @@ export async function exportTenantBillPdfs(splitId: number, targetRootFolder: st
         fixed_unit: split.fixed_unit,
         fixed_unit_price: split.fixed_unit_price,
         energy_unit_price: split.energy_unit_price,
+        extra_unit_price: split.extra_unit_price,
         tax_percent: split.tax_percent,
       },
       split: {

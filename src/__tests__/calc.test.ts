@@ -4,7 +4,7 @@ import { calculateSplit } from '../lib/calc';
 describe('calculateSplit', () => {
   it('keeps zero-consumption row at zero for proportional charges', () => {
     const result = calculateSplit({
-      bill: { fixed_charge: 100, energy_charge: 100, energy_unit_price: 10, extra_charge: 20, tax: 5, interest_charge: 10, other_charge: 0 },
+      bill: { fixed_charge: 100, energy_charge: 100, energy_unit_price: 10, extra_charge: 20, extra_unit_price: 0, extra_unit_charge: 0, tax: 5, interest_charge: 10, other_charge: 0 },
       split: { tax_rate: 5 },
       rows: [
         { tenant_id: 1, previous_reading: 0, present_reading: 0, fixed_adjust: 0, extra_adjust: 0, interest_adjust: 0 },
@@ -18,7 +18,7 @@ describe('calculateSplit', () => {
 
   it('adds adjustments on top of calculated values', () => {
     const result = calculateSplit({
-      bill: { fixed_charge: 100, energy_charge: 100, energy_unit_price: 10, extra_charge: 20, tax: 0, interest_charge: 10, other_charge: 0 },
+      bill: { fixed_charge: 100, energy_charge: 100, energy_unit_price: 10, extra_charge: 20, extra_unit_price: 0, extra_unit_charge: 0, tax: 0, interest_charge: 10, other_charge: 0 },
       split: { tax_rate: 0 },
       rows: [{ tenant_id: 1, previous_reading: 0, present_reading: 10, fixed_adjust: 50, extra_adjust: 5, interest_adjust: 7 }],
     });
@@ -27,7 +27,7 @@ describe('calculateSplit', () => {
 
   it('keeps energy calculated while applying other final adjustments', () => {
     const result = calculateSplit({
-      bill: { fixed_charge: 0, energy_charge: 100, energy_unit_price: 10, extra_charge: 0, tax: 0, interest_charge: 0, other_charge: 20 },
+      bill: { fixed_charge: 0, energy_charge: 100, energy_unit_price: 10, extra_charge: 0, extra_unit_price: 0, extra_unit_charge: 0, tax: 0, interest_charge: 0, other_charge: 20 },
       split: { tax_rate: 0 },
       rows: [
         {
@@ -50,7 +50,7 @@ describe('calculateSplit', () => {
 
   it('uses adjusted final amounts when calculating bill differences', () => {
     const result = calculateSplit({
-      bill: { fixed_charge: 100, energy_charge: 100, energy_unit_price: 10, extra_charge: 20, tax: 0, interest_charge: 10, other_charge: 5 },
+      bill: { fixed_charge: 100, energy_charge: 100, energy_unit_price: 10, extra_charge: 20, extra_unit_price: 0, extra_unit_charge: 0, tax: 0, interest_charge: 10, other_charge: 5 },
       split: { tax_rate: 0 },
       rows: [
         {
@@ -74,7 +74,7 @@ describe('calculateSplit', () => {
 
   it('calculates manual row charges without proportional bill totals', () => {
     const result = calculateSplit({
-      bill: { fixed_charge: 0, energy_charge: 0, energy_unit_price: 2, extra_charge: 0, tax: 0, interest_charge: 0, other_charge: 0 },
+      bill: { fixed_charge: 0, energy_charge: 0, energy_unit_price: 2, extra_charge: 0, extra_unit_price: 0, extra_unit_charge: 0, tax: 0, interest_charge: 0, other_charge: 0 },
       split: { tax_rate: 5 },
       rows: [
         {
@@ -98,7 +98,7 @@ describe('calculateSplit', () => {
 
   it('applies row-level energy prices, energy amounts, and tax overrides', () => {
     const result = calculateSplit({
-      bill: { fixed_charge: 0, energy_charge: 0, energy_unit_price: 2, extra_charge: 0, tax: 0, interest_charge: 0, other_charge: 0 },
+      bill: { fixed_charge: 0, energy_charge: 0, energy_unit_price: 2, extra_charge: 0, extra_unit_price: 0, extra_unit_charge: 0, tax: 0, interest_charge: 0, other_charge: 0 },
       split: { tax_rate: 5 },
       rows: [
         {
@@ -124,7 +124,7 @@ describe('calculateSplit', () => {
 
   it('adds editable management fees after the electricity subtotal', () => {
     const result = calculateSplit({
-      bill: { fixed_charge: 0, energy_charge: 0, energy_unit_price: 2, extra_charge: 0, tax: 0, interest_charge: 0, other_charge: 0 },
+      bill: { fixed_charge: 0, energy_charge: 0, energy_unit_price: 2, extra_charge: 0, extra_unit_price: 0, extra_unit_charge: 0, tax: 0, interest_charge: 0, other_charge: 0 },
       split: { tax_rate: 0 },
       rows: [{
         tenant_id: 1,
@@ -143,5 +143,19 @@ describe('calculateSplit', () => {
     expect(result.rows[0].management_total).toBe(750);
     expect(result.rows[0].payable).toBe(770);
     expect(result.totals.management_total).toBe(750);
+  });
+
+  it('computes the extra unit charge from consumed units and the extra unit price', () => {
+    const result = calculateSplit({
+      bill: { fixed_charge: 0, energy_charge: 0, energy_unit_price: 5, extra_charge: 0, extra_unit_price: 2, extra_unit_charge: 20, tax: 0, interest_charge: 0, other_charge: 0 },
+      split: { tax_rate: 0 },
+      rows: [{ tenant_id: 1, previous_reading: 0, present_reading: 10, fixed_adjust: 0, extra_adjust: 0, extra_unit_adjust: 3, interest_adjust: 0 }],
+    });
+
+    expect(result.rows[0].extra_unit_charge_calc).toBe(20);
+    expect(result.rows[0].extra_unit_charge).toBe(23);
+    expect(result.rows[0].energy_charge).toBe(50);
+    expect(result.rows[0].payable).toBe(73);
+    expect(result.reconciliation.extra_unit_diff).toBe(-3);
   });
 });

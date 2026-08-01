@@ -8,6 +8,8 @@ export type SplitBillRowInput = {
   energy_unit_price?: number;
   energy_adjust?: number;
   extra_adjust: number;
+  extra_unit_price?: number;
+  extra_unit_adjust?: number;
   tax_adjust?: number;
   interest_adjust: number;
   other_adjust?: number;
@@ -22,6 +24,8 @@ export type SplitBillInput = {
     energy_charge: number;
     energy_unit_price: number;
     extra_charge: number;
+    extra_unit_price: number;
+    extra_unit_charge: number;
     tax: number;
     interest_charge: number;
     other_charge: number;
@@ -54,13 +58,17 @@ export function calculateSplit(input: SplitBillInput) {
     const other_charge_calc = input.bill.other_charge * ratio;
     const energy_unit_price = row.energy_unit_price ?? input.bill.energy_unit_price;
     const energy_charge_calc = row.consumed_unit * energy_unit_price;
+    const extra_unit_price = row.extra_unit_price ?? input.bill.extra_unit_price;
+    const extra_unit_charge_calc = row.consumed_unit * extra_unit_price;
     const fixed_total = fixed_charge_calc + row.fixed_adjust;
     const energy_total = energy_charge_calc + (row.energy_adjust ?? 0);
     const extra_total = extra_charge_calc + row.extra_adjust;
+    const extra_unit_total = extra_unit_charge_calc + (row.extra_unit_adjust ?? 0);
     const interest_total = interest_charge_calc + row.interest_adjust;
     const other_total = other_charge_calc + (row.other_adjust ?? 0);
-    const tax = (fixed_total + energy_total + extra_total) * (input.split.tax_rate / 100) + (row.tax_adjust ?? 0);
-    const sub_total = fixed_total + energy_total + extra_total + tax;
+    const tax =
+      (fixed_total + energy_total + extra_total + extra_unit_total) * (input.split.tax_rate / 100) + (row.tax_adjust ?? 0);
+    const sub_total = fixed_total + energy_total + extra_total + extra_unit_total + tax;
     const electricity_total = sub_total + interest_total + other_total;
     const management_total = (row.maintenance_fee ?? 0) + (row.generator_fee ?? 0) + (row.management_extra_fee ?? 0);
     const payable = electricity_total + management_total;
@@ -73,6 +81,9 @@ export function calculateSplit(input: SplitBillInput) {
       energy_charge_calc: round(energy_charge_calc),
       energy_charge: round(energy_total),
       extra_charge_calc: round(extra_charge_calc),
+      extra_unit_price: round(extra_unit_price),
+      extra_unit_charge_calc: round(extra_unit_charge_calc),
+      extra_unit_charge: round(extra_unit_total),
       tax: round(tax),
       sub_total: round(sub_total),
       interest_charge_calc: round(interest_charge_calc),
@@ -93,6 +104,8 @@ export function calculateSplit(input: SplitBillInput) {
       energy_charge: round(acc.energy_charge + row.energy_charge),
       extra_charge_calc: round(acc.extra_charge_calc + row.extra_charge_calc),
       extra_charge: round(acc.extra_charge + row.extra_charge_calc + row.extra_adjust),
+      extra_unit_charge_calc: round(acc.extra_unit_charge_calc + row.extra_unit_charge_calc),
+      extra_unit_charge: round(acc.extra_unit_charge + row.extra_unit_charge),
       tax: round(acc.tax + row.tax),
       sub_total: round(acc.sub_total + row.sub_total),
       interest_charge_calc: round(acc.interest_charge_calc + row.interest_charge_calc),
@@ -110,6 +123,8 @@ export function calculateSplit(input: SplitBillInput) {
       energy_charge: 0,
       extra_charge_calc: 0,
       extra_charge: 0,
+      extra_unit_charge_calc: 0,
+      extra_unit_charge: 0,
       tax: 0,
       sub_total: 0,
       interest_charge_calc: 0,
@@ -129,6 +144,7 @@ export function calculateSplit(input: SplitBillInput) {
       fixed_diff: round(input.bill.fixed_charge - totals.fixed_charge),
       energy_diff: round(input.bill.energy_charge - totals.energy_charge),
       extra_diff: round(input.bill.extra_charge - totals.extra_charge),
+      extra_unit_diff: round(input.bill.extra_unit_charge - totals.extra_unit_charge),
       tax_diff: round(input.bill.tax - totals.tax),
       interest_diff: round(input.bill.interest_charge - totals.interest_charge),
       other_diff: round(input.bill.other_charge - totals.other_charge),

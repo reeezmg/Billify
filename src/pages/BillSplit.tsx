@@ -18,6 +18,8 @@ type RowState = {
   energy_unit_price: number;
   energy_adjust: number;
   extra_adjust: number;
+  extra_unit_price: number;
+  extra_unit_adjust: number;
   tax_adjust: number;
   interest_adjust: number;
   other_adjust: number;
@@ -29,6 +31,8 @@ type RowState = {
   energy_charge_calc?: number;
   energy_charge?: number;
   extra_charge_calc?: number;
+  extra_unit_charge_calc?: number;
+  extra_unit_charge?: number;
   tax?: number;
   sub_total?: number;
   interest_charge_calc?: number;
@@ -43,7 +47,7 @@ type RowState = {
   whatsapp_message_id?: string | null;
 };
 
-type EditableField = 'fixed_adjust' | 'extra_adjust' | 'interest_adjust' | 'other_adjust';
+type EditableField = 'fixed_adjust' | 'extra_adjust' | 'extra_unit_adjust' | 'interest_adjust' | 'other_adjust';
 
 type EditingCell = {
   tenant_id: number;
@@ -202,6 +206,8 @@ export default function BillSplit() {
             energy_unit_price: row.energy_unit_price || selectedBill?.energy_unit_price || 0,
             energy_adjust: row.energy_adjust ?? 0,
             extra_adjust: row.extra_adjust ?? 0,
+            extra_unit_price: row.extra_unit_price || selectedBill?.extra_unit_price || 0,
+            extra_unit_adjust: row.extra_unit_adjust ?? 0,
             tax_adjust: row.tax_adjust ?? 0,
             interest_adjust: row.interest_adjust ?? 0,
             other_adjust: row.other_adjust ?? 0,
@@ -232,6 +238,8 @@ export default function BillSplit() {
           energy_unit_price: selectedBill?.energy_unit_price ?? 0,
           energy_adjust: 0,
           extra_adjust: 0,
+          extra_unit_price: selectedBill?.extra_unit_price ?? 0,
+          extra_unit_adjust: 0,
           tax_adjust: 0,
           interest_adjust: 0,
           other_adjust: 0,
@@ -256,6 +264,8 @@ export default function BillSplit() {
               energy_charge: isManual ? 0 : bill.energy_charge,
               energy_unit_price: bill.energy_unit_price,
               extra_charge: isManual ? 0 : bill.extra_charge,
+              extra_unit_price: bill.extra_unit_price,
+              extra_unit_charge: isManual ? 0 : bill.extra_unit_charge,
               tax: isManual ? 0 : bill.tax,
               interest_charge: isManual ? 0 : bill.interest_charge,
               other_charge: isManual ? 0 : bill.other_charge,
@@ -267,7 +277,10 @@ export default function BillSplit() {
     [bill, isManual, rows],
   );
 
-  const updateManualBillValue = (field: 'tax_percent' | 'energy_unit_price' | 'fixed_unit_price', value: number) => {
+  const updateManualBillValue = (
+    field: 'tax_percent' | 'energy_unit_price' | 'fixed_unit_price' | 'extra_unit_price',
+    value: number,
+  ) => {
     setRows((current) =>
       current.map((row) => {
         if (field === 'fixed_unit_price') {
@@ -279,6 +292,9 @@ export default function BillSplit() {
         }
         if (field === 'energy_unit_price') {
           return { ...row, energy_unit_price: value, energy_adjust: 0 };
+        }
+        if (field === 'extra_unit_price') {
+          return { ...row, extra_unit_price: value, extra_unit_adjust: 0 };
         }
         return { ...row, tax_adjust: 0 };
       }),
@@ -298,6 +314,8 @@ export default function BillSplit() {
       | 'energy_unit_price'
       | 'energy_adjust'
       | 'extra_adjust'
+      | 'extra_unit_price'
+      | 'extra_unit_adjust'
       | 'tax_adjust'
       | 'interest_adjust'
       | 'other_adjust'
@@ -316,6 +334,8 @@ export default function BillSplit() {
         return row.fixed_charge_calc ?? 0;
       case 'extra_adjust':
         return row.extra_charge_calc ?? 0;
+      case 'extra_unit_adjust':
+        return row.extra_unit_charge_calc ?? 0;
       case 'interest_adjust':
         return row.interest_charge_calc ?? 0;
       case 'other_adjust':
@@ -498,6 +518,7 @@ export default function BillSplit() {
           energy_unit: calc.totals.consumed_unit,
           energy_charge: calc.totals.energy_charge,
           extra_charge: calc.totals.extra_charge,
+          extra_unit_charge: calc.totals.extra_unit_charge,
           tax: calc.totals.tax,
           interest_charge: calc.totals.interest_charge,
           other_charge: calc.totals.other_charge,
@@ -517,6 +538,8 @@ export default function BillSplit() {
           energy_unit_price: bill.energy_unit_price,
           fixed_unit_price: bill.fixed_unit_price,
           extra_charge: isManual ? 0 : bill.extra_charge,
+          extra_unit_price: bill.extra_unit_price,
+          extra_unit_charge: isManual ? 0 : bill.extra_unit_charge,
           tax: isManual ? 0 : bill.tax,
           interest_charge: isManual ? 0 : bill.interest_charge,
           other_charge: isManual ? 0 : bill.other_charge,
@@ -554,6 +577,8 @@ export default function BillSplit() {
               energy_unit_price: row.energy_unit_price || bill.energy_unit_price,
               energy_adjust: row.energy_adjust ?? 0,
               extra_adjust: row.extra_adjust ?? 0,
+              extra_unit_price: row.extra_unit_price || bill.extra_unit_price,
+              extra_unit_adjust: row.extra_unit_adjust ?? 0,
               tax_adjust: row.tax_adjust ?? 0,
               interest_adjust: row.interest_adjust ?? 0,
               other_adjust: row.other_adjust ?? 0,
@@ -730,6 +755,14 @@ export default function BillSplit() {
                     onChange={(value) => updateManualBillValue('fixed_unit_price', value)}
                   />
                 </label>
+                <label>
+                  <div className="text-xs text-slate-400">Extra unit price</div>
+                  <EmptyableNumberInput
+                    className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950 px-2 py-1.5 text-sm text-white"
+                    value={bill.extra_unit_price}
+                    onChange={(value) => updateManualBillValue('extra_unit_price', value)}
+                  />
+                </label>
               </div>
             </div>
           ) : <>
@@ -784,6 +817,16 @@ export default function BillSplit() {
                   <span className="font-semibold text-violet-100">Rs {bill.fixed_charge.toFixed(2)}</span>
                 </div>
               </div>
+                <div className="rounded-2xl border border-teal-400/15 bg-teal-400/5 px-4 py-3 text-sm lg:col-span-3">
+                <div className="text-xs text-slate-400">Extra unit summary</div>
+                <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-white">
+                  <span>{bill.energy_unit.toFixed(2)} units</span>
+                  <span className="text-slate-500">x</span>
+                  <span>Rs {bill.extra_unit_price.toFixed(2)}</span>
+                  <span className="text-slate-500">=</span>
+                  <span className="font-semibold text-teal-100">Rs {bill.extra_unit_charge.toFixed(2)}</span>
+                </div>
+              </div>
                <div className="rounded-2xl border border-amber-400/15 bg-amber-400/5 px-4 py-3 text-sm lg:col-span-2">
                 <div className="text-xs text-slate-400">Tax summary</div>
                 <div className="mt-2 flex items-baseline gap-2 whitespace-nowrap text-white">
@@ -817,12 +860,13 @@ export default function BillSplit() {
             <table className="table-fixed w-full text-left text-xs">
               <thead className="bg-white/5 text-slate-300">
                 <tr>
-                  <th className="w-[16%] px-3 py-2">Fixed ({bill.fixed_unit.toFixed(2)} units)</th>
-                  <th className="w-[16%] px-3 py-2">Consumed ({bill.energy_unit.toFixed(2)} units)</th>
-                  <th className="w-[12%] px-3 py-2">Extra</th>
-                  <th className="w-[12%] px-3 py-2">Tax</th>
-                  <th className="w-[12%] px-3 py-2">Interest</th>
-                  <th className="w-[12%] px-3 py-2">Other</th>
+                  <th className="w-[14%] px-3 py-2">Fixed ({bill.fixed_unit.toFixed(2)} units)</th>
+                  <th className="w-[14%] px-3 py-2">Consumed ({bill.energy_unit.toFixed(2)} units)</th>
+                  <th className="w-[10%] px-3 py-2">Extra</th>
+                  <th className="w-[14%] px-3 py-2">Extra unit</th>
+                  <th className="w-[10%] px-3 py-2">Tax</th>
+                  <th className="w-[10%] px-3 py-2">Interest</th>
+                  <th className="w-[10%] px-3 py-2">Other</th>
                 </tr>
               </thead>
               <tbody>
@@ -830,6 +874,7 @@ export default function BillSplit() {
                   <td className="px-3 py-2">Rs {calc?.reconciliation.fixed_diff.toFixed(2) ?? '0.00'}</td>
                   <td className="px-3 py-2">Rs {calc?.reconciliation.energy_diff.toFixed(2) ?? '0.00'}</td>
                   <td className="px-3 py-2">Rs {calc?.reconciliation.extra_diff.toFixed(2) ?? '0.00'}</td>
+                  <td className="px-3 py-2">Rs {calc?.reconciliation.extra_unit_diff.toFixed(2) ?? '0.00'}</td>
                   <td className="px-3 py-2">Rs {calc?.reconciliation.tax_diff.toFixed(2) ?? '0.00'}</td>
                   <td className="px-3 py-2">Rs {calc?.reconciliation.interest_diff.toFixed(2) ?? '0.00'}</td>
                   <td className="px-3 py-2">Rs {calc?.reconciliation.other_diff.toFixed(2) ?? '0.00'}</td>
@@ -905,14 +950,15 @@ export default function BillSplit() {
         <table className="w-full table-fixed text-left text-[11px]">
           <thead className="bg-white/5 text-slate-300">
             <tr>
-              <th className="w-[10%] border-r border-white/20 px-2 py-3">Details</th>
-              <th className="w-[12%] border-r border-white/20 px-2 py-3">Readings</th>
-              <th className="w-[14%] border-r border-white/20 px-2 py-3">Consumed</th>
-              <th className="w-[14%] border-r border-white/20 px-2 py-3">Fixed</th>
-              <th className="w-[10%] border-r border-white/20 px-2 py-3">Charges</th>
-              <th className="w-[10%] border-r border-white/20 px-2 py-3">Additional</th>
-              <th className="w-[16%] border-r border-white/20 px-2 py-3">Management</th>
-              <th className="w-[14%] bg-emerald-400/10 px-2 py-3 text-emerald-100">Totals</th>
+              <th className="w-[9%] border-r border-white/20 px-2 py-3">Details</th>
+              <th className="w-[10%] border-r border-white/20 px-2 py-3">Readings</th>
+              <th className="w-[12%] border-r border-white/20 px-2 py-3">Consumed</th>
+              <th className="w-[12%] border-r border-white/20 px-2 py-3">Fixed</th>
+              <th className="w-[12%] border-r border-white/20 px-2 py-3">Extra Unit</th>
+              <th className="w-[9%] border-r border-white/20 px-2 py-3">Charges</th>
+              <th className="w-[9%] border-r border-white/20 px-2 py-3">Additional</th>
+              <th className="w-[14%] border-r border-white/20 px-2 py-3">Management</th>
+              <th className="w-[13%] bg-emerald-400/10 px-2 py-3 text-emerald-100">Totals</th>
             </tr>
           </thead>
           <tbody>
@@ -952,6 +998,13 @@ export default function BillSplit() {
                   </td>
                   <td className="min-w-0 border-r border-white/10 px-2 py-3">
                     <div className="space-y-3">
+                      {field('Unit', <span className="text-white">{row.consumed_unit.toFixed(2)}</span>)}
+                      {field('Unit price', isManual ? manualNumberInput(src.extra_unit_price, (value) => setRows((current) => current.map((item) => item.tenant_id === src.tenant_id ? { ...item, extra_unit_price: value, extra_unit_adjust: 0 } : item))) : <span className="text-white">{bill?.extra_unit_price.toFixed(2) ?? '0.00'}</span>)}
+                      {field('Charge', isManual ? manualNumberInput(row.extra_unit_charge, (value) => updateRow(src.tenant_id, 'extra_unit_adjust', Number((value - row.extra_unit_charge_calc).toFixed(2)))) : renderChargeCell(src, row, 'extra_unit_adjust'))}
+                    </div>
+                  </td>
+                  <td className="min-w-0 border-r border-white/10 px-2 py-3">
+                    <div className="space-y-3">
                       {field('Extra', isManual ? renderManualChargeInput(src, 'extra_adjust') : renderChargeCell(src, row, 'extra_adjust'))}
                       {field('Tax', isManual ? manualNumberInput(row.tax, (value) => updateRow(src.tenant_id, 'tax_adjust', Number((value - (row.tax - src.tax_adjust)).toFixed(2)))) : <span className="text-white">{row.tax.toFixed(2)}</span>)}
                     </div>
@@ -982,7 +1035,7 @@ export default function BillSplit() {
           </tbody>
           <tfoot className="border-t border-white/10 bg-white/5 text-white">
             <tr>
-              <td className="px-3 py-3 text-right font-semibold text-slate-300" colSpan={7}>Total Payable</td>
+              <td className="px-3 py-3 text-right font-semibold text-slate-300" colSpan={8}>Total Payable</td>
               <td className="bg-emerald-400/10 px-3 py-3 font-semibold text-emerald-100">Rs {(calc?.totals.payable ?? 0).toFixed(2)}</td>
             </tr>
           </tfoot>
