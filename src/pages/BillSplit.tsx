@@ -60,6 +60,9 @@ type ReminderState = {
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
+const sortByRoomNo = <T extends { room_no: string }>(list: T[]) =>
+  [...list].sort((a, b) => a.room_no.localeCompare(b.room_no, undefined, { numeric: true, sensitivity: 'base' }));
+
 const formatDate = (value: string | null) => {
   if (!value) return '-';
   const date = new Date(value);
@@ -181,7 +184,7 @@ export default function BillSplit() {
       setSplit(splitDetails?.split ?? splitResponse);
       if (rowsFromDb.length > 0) {
         setRows(
-          rowsFromDb.map((row: any) => ({
+          sortByRoomNo(rowsFromDb).map((row: any) => ({
             id: row.id,
             tenant_id: row.tenant_id,
             tenant_name: row.tenant_name,
@@ -216,7 +219,7 @@ export default function BillSplit() {
         return;
       }
       setRows(
-        activeTenants.map((tenant) => ({
+        sortByRoomNo(activeTenants).map((tenant) => ({
           tenant_id: tenant.id,
           tenant_name: tenant.name,
           room_no: tenant.room_no,
@@ -533,7 +536,7 @@ export default function BillSplit() {
         setSplit(splitDetails?.split ?? splitDetails ?? split);
         if (splitDetails?.rows?.length) {
           setRows(
-            splitDetails.rows.map((row: any) => ({
+            sortByRoomNo(splitDetails.rows).map((row: any) => ({
               id: row.id,
               tenant_id: row.tenant_id,
               tenant_name: row.tenant_name,
